@@ -1,0 +1,23 @@
+{
+  "name": "loombrain-sessions",
+  "version": "0.1.0",
+  "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "validate": "bun run scripts/validate-plugin.ts",
+    "validate:versions": "bun run scripts/validate-versions.ts",
+    "release:patch": "bun run scripts/release.ts patch",
+    "release:minor": "bun run scripts/release.ts minor",
+    "release:major": "bun run scripts/release.ts major"
+  },
+  "dependencies": {
+    "open": "^10.1.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "zod": "^3.25.67"
+  }
+}

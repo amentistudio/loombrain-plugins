@@ -1,0 +1,18 @@
+{
+  "name": "loombrain-plugins",
+  "description": "Official LoomBrain plugins for Claude Code",
+  "owner": {
+    "name": "Amenti Studio",
+    "url": "https://github.com/amentistudio"
+  },
+  "plugins": [
+    {
+      "name": "loombrain-sessions",
+      "source": {
+        "source": "local",
+        "path": "./plugins/loombrain-sessions"
+      },
+      "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory"
+    }
+  ]
+}

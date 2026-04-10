@@ -1,0 +1,42 @@
+{
+  "name": "loombrain-sessions",
+  "version": "0.1.0",
+  "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
+  "author": {
+    "name": "Ladislav Martincik",
+    "url": "https://github.com/iamladi"
+  },
+  "homepage": "https://github.com/amentistudio/loombrain-plugins",
+  "repository": "https://github.com/amentistudio/loombrain-plugins",
+  "license": "MIT",
+  "keywords": ["loombrain", "session-capture", "episodic-memory", "claude-code"],
+  "commands": {
+    "lb:login": {
+      "description": "Log in to LoomBrain to enable session capture",
+      "source": "./commands/login.md"
+    },
+    "lb:capture-session": {
+      "description": "Verify capture config and test the pipeline",
+      "source": "./commands/capture-session.md"
+    },
+    "lb:capture-status": {
+      "description": "View capture health, recent log entries, and configuration",
+      "source": "./commands/capture-status.md"
+    }
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/capture-wrapper.sh",
+            "async": true,
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
