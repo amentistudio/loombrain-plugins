@@ -1,13 +1,36 @@
-import { readFile } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import { parseSessionLines } from "./converter";
 import { splitIntoChunks } from "./splitter";
 import { getProjectHint } from "./git-hint";
 import { resolveAuth, buildCapturePayload, postCapture } from "./api-client";
 import { isAlreadyCaptured, markCaptured } from "./idempotency";
-import { logError } from "./logger";
+import { logError, logInfo } from "./logger";
 import type { CaptureChunk, EpisodeEvent, SessionHookInput } from "./types";
 
 const MIN_MEANINGFUL_EVENTS = 5;
+
+export interface HookInputResult {
+	raw: string;
+	tempFile?: string;
+}
+
+/**
+ * Read hook input from --stdin-file argument or fall back to stdin.
+ * When reading from a temp file, deletes it after reading.
+ */
+export async function readHookInput(argv: string[]): Promise<HookInputResult> {
+	const idx = argv.indexOf("--stdin-file");
+	if (idx !== -1 && idx + 1 < argv.length) {
+		const tempFile = argv[idx + 1];
+		const raw = await readFile(tempFile, "utf-8");
+		await unlink(tempFile).catch(() => {});
+		return { raw, tempFile };
+	}
+
+	// Fall back to stdin
+	const raw = await new Response(Bun.stdin.stream()).text();
+	return { raw };
+}
 
 export interface ProcessResult {
 	skipped: boolean;
@@ -60,10 +83,14 @@ async function main(): Promise<void> {
 	let sessionId = "unknown";
 
 	try {
-		// Read stdin
-		const stdin = await new Response(Bun.stdin.stream()).text();
-		const input: SessionHookInput = JSON.parse(stdin);
+		await logInfo(sessionId, "Capture hook started");
+
+		// Read input: prefer --stdin-file, fall back to stdin
+		const { raw } = await readHookInput(process.argv.slice(2));
+		const input: SessionHookInput = JSON.parse(raw);
 		sessionId = input.session_id;
+
+		await logInfo(sessionId, `Processing session from ${input.transcript_path}`);
 
 		if (!input.transcript_path) {
 			await logError(sessionId, "No transcript_path provided");
@@ -103,6 +130,7 @@ async function main(): Promise<void> {
 
 		// Mark root session as captured if all chunks succeeded
 		await markCaptured(sessionId);
+		await logInfo(sessionId, `Capture complete: ${result.chunks.length} chunk(s) uploaded`);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await logError(sessionId, `Unhandled error: ${msg}`);
