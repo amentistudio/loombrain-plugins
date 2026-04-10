@@ -1,0 +1,13 @@
+{
+  "name": "loombrain-plugins",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate:marketplace": "bun run scripts/validate-marketplace.ts",
+    "test:marketplace": "bun test __tests__/validate-marketplace.test.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "zod": "^3.25.67"
+  }
+}

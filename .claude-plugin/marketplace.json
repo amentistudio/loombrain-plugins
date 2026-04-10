@@ -8,10 +8,7 @@
   "plugins": [
     {
       "name": "loombrain-sessions",
-      "source": {
-        "source": "local",
-        "path": "./plugins/loombrain-sessions"
-      },
+      "source": "./plugins/loombrain-sessions",
       "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory"
     }
   ]
