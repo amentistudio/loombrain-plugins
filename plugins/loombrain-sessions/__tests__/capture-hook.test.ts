@@ -125,8 +125,16 @@ describe("readHookInput", () => {
 	});
 
 	test("falls back to stdin when --stdin-file has no following value", async () => {
-		// --stdin-file at index 0, argv[1] is undefined → idx+1 < length is false → stdin path
-		const result = await readHookInput(["--stdin-file"]);
+		const testPayload = '{"session_id":"from-stdin","cwd":"/tmp"}';
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode(testPayload));
+				controller.close();
+			},
+		});
+
+		const result = await readHookInput(["--stdin-file"], stream);
 		expect(result.tempFile).toBeUndefined();
+		expect(result.raw).toBe(testPayload);
 	});
 });

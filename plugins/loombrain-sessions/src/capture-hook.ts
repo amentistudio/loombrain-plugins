@@ -18,7 +18,10 @@ export interface HookInputResult {
  * Read hook input from --stdin-file argument or fall back to stdin.
  * When reading from a temp file, deletes it after reading.
  */
-export async function readHookInput(argv: string[]): Promise<HookInputResult> {
+export async function readHookInput(
+	argv: string[],
+	stdinStream: ReadableStream = Bun.stdin.stream(),
+): Promise<HookInputResult> {
 	const idx = argv.indexOf("--stdin-file");
 	if (idx !== -1 && idx + 1 < argv.length) {
 		const tempFile = argv[idx + 1];
@@ -28,7 +31,7 @@ export async function readHookInput(argv: string[]): Promise<HookInputResult> {
 	}
 
 	// Fall back to stdin
-	const raw = await new Response(Bun.stdin.stream()).text();
+	const raw = await new Response(stdinStream).text();
 	return { raw };
 }
 
