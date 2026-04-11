@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { processSession, countMeaningfulEvents } from "../src/capture-hook";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { processSession, countMeaningfulEvents, readHookInput } from "../src/capture-hook";
 import type { EpisodeEvent } from "../src/types";
 
 describe("countMeaningfulEvents", () => {
@@ -88,5 +92,49 @@ describe("processSession", () => {
 		const chunks = result.chunks;
 		expect(chunks).toBeDefined();
 		expect(chunks!.length).toBeGreaterThan(1);
+	});
+});
+
+describe("readHookInput", () => {
+	let tempDir: string;
+
+	beforeEach(async () => {
+		tempDir = await mkdtemp(join(tmpdir(), "hook-input-test-"));
+	});
+
+	afterEach(async () => {
+		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	test("reads from --stdin-file when argument is present", async () => {
+		const inputData = JSON.stringify({ session_id: "sess-42", transcript_path: "/tmp/t.jsonl", cwd: "/tmp" });
+		const filePath = join(tempDir, "input.json");
+		await writeFile(filePath, inputData);
+
+		const result = await readHookInput(["--stdin-file", filePath]);
+		expect(result.raw).toBe(inputData);
+		expect(result.tempFile).toBe(filePath);
+	});
+
+	test("cleans up temp file after reading", async () => {
+		const filePath = join(tempDir, "cleanup-test.json");
+		await writeFile(filePath, '{"session_id":"s1"}');
+
+		await readHookInput(["--stdin-file", filePath]);
+		expect(existsSync(filePath)).toBe(false);
+	});
+
+	test("falls back to stdin when --stdin-file has no following value", async () => {
+		const testPayload = '{"session_id":"from-stdin","cwd":"/tmp"}';
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode(testPayload));
+				controller.close();
+			},
+		});
+
+		const result = await readHookInput(["--stdin-file"], stream);
+		expect(result.tempFile).toBeUndefined();
+		expect(result.raw).toBe(testPayload);
 	});
 });
