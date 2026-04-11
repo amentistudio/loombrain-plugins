@@ -119,7 +119,8 @@ async function main(): Promise<void> {
 			return;
 		}
 
-		// Upload each chunk
+		// Upload each chunk, tracking successful uploads
+		let uploaded = 0;
 		for (const chunk of result.chunks) {
 			if (await isAlreadyCaptured(chunk.session_id)) continue;
 
@@ -128,12 +129,16 @@ async function main(): Promise<void> {
 
 			if (response) {
 				await markCaptured(chunk.session_id);
+				uploaded++;
 			}
 		}
 
 		// Mark root session as captured if all chunks succeeded
 		await markCaptured(sessionId);
-		await logInfo(sessionId, `Capture complete: ${result.chunks.length} chunk(s) uploaded`);
+		await logInfo(
+			sessionId,
+			`Capture complete: ${uploaded}/${result.chunks.length} chunk(s) uploaded`,
+		);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await logError(sessionId, `Unhandled error: ${msg}`);
