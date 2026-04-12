@@ -163,7 +163,7 @@ describe("postCapture success marker", () => {
 		}
 	});
 
-	test("403 logs generic auth error without episodic_memory special-case", async () => {
+	test("403 returns null even when body mentions episodic_memory", async () => {
 		const sessionId = "test-403-generic-sess";
 		const payload = makePayload(sessionId);
 		const auth: AuthResult = { header: "ApiKey bad", apiUrl: "https://example.com" };

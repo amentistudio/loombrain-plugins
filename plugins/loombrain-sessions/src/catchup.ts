@@ -1,6 +1,6 @@
 import { readFile, writeFile, unlink, mkdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { processSession } from "./capture-hook";
 import { buildCapturePayload, postCapture, resolveAuth, type AuthResult } from "./api-client";
 import { markCaptured } from "./idempotency";
@@ -249,7 +249,7 @@ export async function runResurrectionScan(options: {
 			continue;
 		}
 
-		const projectDirName = foundPath.split("/").slice(-2, -1)[0] ?? "";
+		const projectDirName = basename(dirname(foundPath));
 		const cwd = deriveCwdFromProjectDir(projectDirName) ?? "/";
 
 		let processed: Awaited<ReturnType<typeof processSession>>;
@@ -345,8 +345,7 @@ export async function runCatchup(options: {
 	if (!isAlreadyCapturedFn) {
 		// Read captured sessions from file
 		try {
-			const { getStateDir: getSD } = await import("./logger");
-			const capturedFile = join(getSD(), "captured-sessions");
+			const capturedFile = join(getStateDir(), "captured-sessions");
 			if (existsSync(capturedFile)) {
 				const content = await readFile(capturedFile, "utf-8");
 				for (const line of content.split("\n")) {
@@ -414,7 +413,7 @@ export async function runCatchup(options: {
 				}
 
 				// Derive cwd from the project directory name
-				const projectDirName = orphan.path.split("/").slice(-2, -1)[0] ?? "";
+				const projectDirName = basename(dirname(orphan.path));
 				const cwd = deriveCwdFromProjectDir(projectDirName) ?? "/";
 
 				// Process session
