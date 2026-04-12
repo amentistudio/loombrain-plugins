@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { processSession, countMeaningfulEvents, readHookInput, parseMode, runSessionEnd } from "../src/capture-hook";
+import { processSession, countMeaningfulEvents, readHookInput, runSessionEnd } from "../src/capture-hook";
 import type { EpisodeEvent, SessionHookInput } from "../src/types";
 
 describe("countMeaningfulEvents", () => {
@@ -136,24 +136,6 @@ describe("readHookInput", () => {
 		const result = await readHookInput(["--stdin-file"], stream);
 		expect(result.tempFile).toBeUndefined();
 		expect(result.raw).toBe(testPayload);
-	});
-});
-
-describe("parseMode", () => {
-	test("returns 'end' as default when --mode not present", () => {
-		expect(parseMode([])).toBe("end");
-	});
-
-	test("returns 'start' when --mode start is passed", () => {
-		expect(parseMode(["--mode", "start"])).toBe("start");
-	});
-
-	test("returns 'end' when --mode end is passed", () => {
-		expect(parseMode(["--mode", "end"])).toBe("end");
-	});
-
-	test("returns 'end' for invalid mode values", () => {
-		expect(parseMode(["--mode", "invalid"])).toBe("end");
 	});
 });
 

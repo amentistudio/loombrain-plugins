@@ -1,6 +1,6 @@
 {
   "name": "loombrain-sessions",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
   "author": {
     "name": "Ladislav Martincik",
@@ -37,19 +37,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/capture-wrapper.sh",
-            "async": true,
-            "timeout": 120
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/catchup-wrapper.sh",
             "async": true,
             "timeout": 120
           }

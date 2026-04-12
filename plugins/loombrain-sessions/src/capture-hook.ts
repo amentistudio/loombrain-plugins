@@ -78,19 +78,6 @@ export async function processSession(
 	return { skipped: false, chunks };
 }
 
-/**
- * Parse --mode argument from argv.
- * Returns 'start' or 'end'. Defaults to 'end' for backwards compatibility.
- */
-export function parseMode(argv: string[]): "start" | "end" {
-	const idx = argv.indexOf("--mode");
-	if (idx !== -1 && idx + 1 < argv.length) {
-		const mode = argv[idx + 1];
-		if (mode === "start" || mode === "end") return mode;
-	}
-	return "end"; // default for backwards compat
-}
-
 export interface SessionEndOptions {
 	stateDir?: string;
 	postCaptureFn?: (
@@ -175,47 +162,21 @@ export async function runSessionEnd(
 }
 
 /**
- * SessionStart handler: runs catchup scan for orphaned transcripts.
- */
-async function runSessionStart(input: SessionHookInput): Promise<void> {
-	const sessionId = input.session_id;
-	await logInfo(sessionId, "Catchup hook started");
-
-	const { existsSync } = await import("node:fs");
-	const { join } = await import("node:path");
-	const { getStateDir } = await import("./logger");
-	const { runCatchup } = await import("./catchup");
-
-	const stateDir = getStateDir();
-	const isFirstRun = !existsSync(join(stateDir, ".v3-marker"));
-
-	await runCatchup({
-		activeSessionId: sessionId,
-		isFirstRun,
-	});
-}
-
-/**
- * Main entry point for the capture hook (SessionEnd and SessionStart).
+ * Main entry point for the capture hook (SessionEnd only).
  * ALWAYS exits 0.
  */
 async function main(): Promise<void> {
 	let sessionId = "unknown";
 
 	try {
-		const mode = parseMode(process.argv.slice(2));
-		await logInfo(sessionId, `Capture hook started (mode=${mode})`);
+		await logInfo(sessionId, "Capture hook started");
 
 		// Read input: prefer --stdin-file, fall back to stdin
 		const { raw } = await readHookInput(process.argv.slice(2));
 		const input: SessionHookInput = JSON.parse(raw);
 		sessionId = input.session_id;
 
-		if (mode === "start") {
-			await runSessionStart(input);
-		} else {
-			await runSessionEnd(input);
-		}
+		await runSessionEnd(input);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await logError(sessionId, `Unhandled error: ${msg}`);
