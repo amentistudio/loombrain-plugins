@@ -9,12 +9,18 @@ const encoder = new TextEncoder();
  * Split events into chunks that respect the 250-event and 1.8MB limits.
  * Returns a single chunk (no suffix) when possible, otherwise parts with `-part-N` suffix.
  */
-export function splitIntoChunks(events: EpisodeEvent[], sessionId: string): CaptureChunk[] {
+export function splitIntoChunks(
+	events: EpisodeEvent[],
+	sessionId: string,
+	paraHint?: string,
+): CaptureChunk[] {
+	const prefix = paraHint ? `${paraHint}: ` : "";
+
 	// Fast path: fits in one chunk
 	if (events.length <= MAX_EVENTS) {
 		const bytes = encoder.encode(JSON.stringify(events)).length;
 		if (bytes <= MAX_BYTES) {
-			return [{ session_id: sessionId, title: "Claude Code session", events }];
+			return [{ session_id: sessionId, title: `${prefix}Claude Code session`, events }];
 		}
 	}
 
@@ -46,7 +52,7 @@ export function splitIntoChunks(events: EpisodeEvent[], sessionId: string): Capt
 
 	return rawChunks.map((chunk, i) => ({
 		session_id: `${sessionId}-part-${i + 1}`,
-		title: `Claude Code session (part ${i + 1} of ${rawChunks.length})`,
+		title: `${prefix}Claude Code session (part ${i + 1} of ${rawChunks.length})`,
 		events: chunk,
 	}));
 }
