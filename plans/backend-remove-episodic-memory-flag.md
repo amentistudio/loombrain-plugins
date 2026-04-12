@@ -1,7 +1,7 @@
 ---
 title: "LoomBrain API: remove episodic_memory tenant feature flag"
 type: Chore
-issue: null
+issue: 7
 research: ["research/research-session-capture-ctrl-c-exit.md"]
 status: Ready for Implementation
 reviewed: true

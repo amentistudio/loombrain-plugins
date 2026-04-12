@@ -1,7 +1,7 @@
 ---
 title: "loombrain-sessions: resilient capture — catchup on SessionStart + converter fix"
 type: Bug
-issue: null
+issue: 6
 research: ["research/research-session-capture-ctrl-c-exit.md"]
 status: Ready for Implementation
 reviewed: true
