@@ -265,11 +265,15 @@ export async function runCatchup(options: {
 	const auth = await resolveAuthFn();
 	if (!auth) {
 		await logError(activeSessionId, "Catchup: not authenticated, skipping");
+		await setAuthCooldown(60 * 60 * 1000, stateDir);
 		return result;
 	}
 
 	// 6. Process each orphan (up to cap)
 	const toProcess = orphans.slice(0, CATCHUP_MAX_UPLOADS_PER_RUN);
+	if (orphans.length > CATCHUP_MAX_UPLOADS_PER_RUN) {
+		result.capped = true;
+	}
 
 	for (const orphan of toProcess) {
 		const lockResult = await withSessionLock(

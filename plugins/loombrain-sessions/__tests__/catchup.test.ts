@@ -487,4 +487,68 @@ describe("runCatchup", () => {
 		const markerPath = join(stateDir, ".v3-marker");
 		expect(existsSync(markerPath)).toBe(false);
 	});
+
+	test("returns cooledDown when auth cooldown is active", async () => {
+		await plantOrphan("sess-cooldown", 2);
+
+		// Set a cooldown that expires in the future
+		await setAuthCooldown(60_000, stateDir);
+
+		const captured = new Set<string>();
+		const result = await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: false,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: fakeResolveAuth,
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async (key) => { captured.add(key); },
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(result.cooledDown).toBe(true);
+		expect(result.uploaded).toBe(0);
+	});
+
+	test("sets capped when orphans exceed batch limit", async () => {
+		for (let i = 0; i < CATCHUP_MAX_UPLOADS_PER_RUN + 3; i++) {
+			await plantOrphan(`sess-capped-${i}`, 2 + (i % 5));
+		}
+
+		const captured = new Set<string>();
+		const result = await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: false,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: fakeResolveAuth,
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async (key) => { captured.add(key); },
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(result.capped).toBe(true);
+	});
+
+	test("sets auth cooldown when auth fails", async () => {
+		await plantOrphan("sess-auth-fail", 2);
+
+		const captured = new Set<string>();
+		const result = await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: false,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: async () => null, // auth fails
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async (key) => { captured.add(key); },
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(result.uploaded).toBe(0);
+		// Verify cooldown was set
+		const { isAuthCooldownActive: checkCooldown } = await import("../src/catchup");
+		const active = await checkCooldown(stateDir);
+		expect(active).toBe(true);
+	});
 });
