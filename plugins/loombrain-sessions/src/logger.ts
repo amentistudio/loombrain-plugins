@@ -54,5 +54,5 @@ export function getLogPath(): string {
 }
 
 export function getStateDir(): string {
-	return STATE_DIR;
+	return process.env.LB_STATE_DIR ?? STATE_DIR;
 }

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0] - 2026-04-12
+
+### Fixed
+- CTRL+C exits no longer lose sessions — SessionStart catchup scans for orphaned transcripts
+- Converter now handles tool_result with array content blocks (was causing `400 expected string` API errors)
+- Root session only marked as captured when ALL chunks succeed (was unconditionally marking even on partial failures)
+
+### Added
+- SessionStart hook for automatic catchup of missed sessions
+- Per-session lockfile deduplication (prevents double-uploads from hook double-firing)
+- Auth failure cooldown (1h backoff on consecutive auth failures)
+- Batch cap (max 20 orphan uploads per catchup run)
+- Structured catchup logging (`Catchup scan: scanned=N, orphans=M, uploaded=K, deferred=D, failed=F`)
+- One-time resurrection scan for v0.2.0 false-captured sessions
+
+### Removed
+- Dead `episodic_memory` detection in API client
+
 ## [0.2.0] - 2026-04-10
 
 ### Fixed

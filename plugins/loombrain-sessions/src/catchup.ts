@@ -161,6 +161,106 @@ export async function findOrphanTranscripts(options: {
 }
 
 /**
+ * Resurrection scan: re-uploads sessions in captured-sessions that were
+ * false-captured by pre-v0.3.0 code (no .success marker means upload never
+ * actually confirmed). The API is idempotent on session_id, so re-uploading
+ * is safe.
+ */
+export async function runResurrectionScan(options: {
+	stateDir: string;
+	projectsDir: string;
+	capturedSessions: Set<string>;
+	lookbackDays: number;
+	auth: AuthResult;
+	processSessionFn: typeof processSession;
+	postCaptureFn: (
+		payload: Parameters<typeof postCapture>[0],
+		auth: AuthResult,
+		sessionId: string,
+	) => Promise<CaptureApiResponse | null>;
+	markCapturedFn: typeof markCaptured;
+}): Promise<{ rescanned: number; resurrected: number }> {
+	const {
+		stateDir,
+		projectsDir,
+		capturedSessions,
+		lookbackDays,
+		auth,
+		processSessionFn,
+		postCaptureFn,
+		markCapturedFn,
+	} = options;
+
+	const lookbackCutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+	let rescanned = 0;
+	let resurrected = 0;
+
+	for (const sessionId of capturedSessions) {
+		// Find the JSONL file for this session
+		const glob = new Bun.Glob(`*/${sessionId}.jsonl`);
+		let foundPath: string | null = null;
+
+		for await (const relPath of glob.scan({ cwd: projectsDir })) {
+			foundPath = join(projectsDir, relPath);
+			break;
+		}
+
+		if (!foundPath) continue;
+
+		// Check if within lookback window
+		try {
+			const { stat } = await import("node:fs/promises");
+			const fileStats = await stat(foundPath);
+			if (fileStats.mtimeMs < lookbackCutoff) continue;
+		} catch {
+			continue;
+		}
+
+		rescanned++;
+
+		// Check if .success marker exists
+		const markerPath = join(stateDir, `.success.${sessionId}`);
+		if (existsSync(markerPath)) {
+			// Truly captured — skip
+			continue;
+		}
+
+		// False-captured — attempt re-upload
+		await logInfo(sessionId, `Resurrection: re-uploading false-captured session`);
+
+		let content: string;
+		try {
+			content = await readFile(foundPath, "utf-8");
+		} catch {
+			continue;
+		}
+
+		const projectDirName = foundPath.split("/").slice(-2, -1)[0] ?? "";
+		const cwd = deriveCwdFromProjectDir(projectDirName) ?? "/";
+
+		let processed: Awaited<ReturnType<typeof processSession>>;
+		try {
+			processed = await processSessionFn(sessionId, content, cwd);
+		} catch {
+			continue;
+		}
+
+		if (processed.skipped || !processed.chunks?.length) continue;
+
+		for (const chunk of processed.chunks) {
+			const payload = buildCapturePayload(chunk);
+			const response = await postCaptureFn(payload, auth, sessionId);
+			if (response) {
+				await markCapturedFn(chunk.session_id);
+				resurrected++;
+			}
+		}
+	}
+
+	return { rescanned, resurrected };
+}
+
+/**
  * Main catchup orchestrator: discovers orphan transcripts and uploads them.
  */
 export async function runCatchup(options: {
@@ -349,6 +449,43 @@ export async function runCatchup(options: {
 			await writeFile(join(stateDir, V3_MARKER_FILE), new Date().toISOString(), "utf-8");
 		} catch {
 			// Non-critical
+		}
+	}
+
+	// 7b. Resurrection scan — only on first run
+	if (isFirstRun && result.uploaded >= 0) {
+		try {
+			// Read captured-sessions from stateDir (may differ from logger stateDir in tests)
+			const capturedSessionsForResurrection = new Set<string>();
+			const capturedFile = join(stateDir, "captured-sessions");
+			if (existsSync(capturedFile)) {
+				const content = await readFile(capturedFile, "utf-8");
+				for (const line of content.split("\n")) {
+					if (line.trim()) capturedSessionsForResurrection.add(line.trim());
+				}
+			}
+
+			if (capturedSessionsForResurrection.size > 0) {
+				const resurrectionResult = await runResurrectionScan({
+					stateDir,
+					projectsDir,
+					capturedSessions: capturedSessionsForResurrection,
+					lookbackDays: CATCHUP_FIRST_RUN_LOOKBACK_DAYS,
+					auth,
+					processSessionFn,
+					postCaptureFn,
+					markCapturedFn,
+				});
+
+				if (resurrectionResult.resurrected > 0) {
+					await logInfo(
+						activeSessionId,
+						`Resurrection scan: rescanned=${resurrectionResult.rescanned}, resurrected=${resurrectionResult.resurrected}`,
+					);
+				}
+			}
+		} catch {
+			// Non-critical — resurrection scan must not block normal catchup
 		}
 	}
 

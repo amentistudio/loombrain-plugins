@@ -552,3 +552,134 @@ describe("runCatchup", () => {
 		expect(active).toBe(true);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// resurrection scan
+// ---------------------------------------------------------------------------
+
+describe("resurrection scan", () => {
+	let projectsDir: string;
+	let stateDir: string;
+
+	const fakeAuth: AuthResult = { header: "ApiKey test-key", apiUrl: "https://test.example.com" };
+	const fakeResolveAuth = async () => fakeAuth;
+
+	beforeEach(async () => {
+		projectsDir = await mkdtemp(join(tmpdir(), "catchup-resurrect-projects-"));
+		stateDir = await mkdtemp(join(tmpdir(), "catchup-resurrect-state-"));
+	});
+
+	afterEach(async () => {
+		await rm(projectsDir, { recursive: true, force: true });
+		await rm(stateDir, { recursive: true, force: true });
+	});
+
+	async function plantJsonl(
+		sessionId: string,
+		daysAgo: number,
+		content = makeTranscriptContent(12),
+	): Promise<string> {
+		const dir = join(projectsDir, "project-a");
+		await mkdir(dir, { recursive: true });
+		const filePath = join(dir, `${sessionId}.jsonl`);
+		await Bun.write(filePath, content);
+		await setMtime(filePath, daysAgo);
+		return filePath;
+	}
+
+	async function writeCapturedSessions(sessionIds: string[]): Promise<void> {
+		await mkdir(stateDir, { recursive: true });
+		await writeFile(join(stateDir, "captured-sessions"), sessionIds.join("\n") + "\n", "utf-8");
+	}
+
+	async function writeSuccessMarker(sessionId: string): Promise<void> {
+		await writeFile(join(stateDir, `.success.${sessionId}`), new Date().toISOString(), "utf-8");
+	}
+
+	test("re-uploads sessions in captured-sessions that lack .success marker", async () => {
+		const sessionId = "sess-false-captured";
+		await plantJsonl(sessionId, 5);
+		await writeCapturedSessions([sessionId]);
+		// No .success marker written — simulates pre-v0.3.0 false-captured entry
+
+		const uploadedSessions: string[] = [];
+		const fakePostCapture = async (
+			payload: Parameters<typeof import("../src/api-client").postCapture>[0],
+		): Promise<CaptureApiResponse | null> => {
+			uploadedSessions.push(payload.session_id);
+			return { id: "cap-resurrected", status: "ok" };
+		};
+
+		const captured = new Set([sessionId]);
+		await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: true,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: fakeResolveAuth,
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async () => {},
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(uploadedSessions.some((id) => id.startsWith(sessionId))).toBe(true);
+	});
+
+	test("skips sessions that already have .success marker", async () => {
+		const sessionId = "sess-truly-captured";
+		await plantJsonl(sessionId, 5);
+		await writeCapturedSessions([sessionId]);
+		await writeSuccessMarker(sessionId); // Already has success marker
+
+		const uploadedSessions: string[] = [];
+		const fakePostCapture = async (
+			payload: Parameters<typeof import("../src/api-client").postCapture>[0],
+		): Promise<CaptureApiResponse | null> => {
+			uploadedSessions.push(payload.session_id);
+			return { id: "cap-001", status: "ok" };
+		};
+
+		const captured = new Set([sessionId]);
+		await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: true,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: fakeResolveAuth,
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async () => {},
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(uploadedSessions.length).toBe(0);
+	});
+
+	test("resurrection scan only runs on first run", async () => {
+		const sessionId = "sess-not-resurrected";
+		await plantJsonl(sessionId, 5);
+		await writeCapturedSessions([sessionId]);
+		// No .success marker — but isFirstRun=false
+
+		const uploadedSessions: string[] = [];
+		const fakePostCapture = async (
+			payload: Parameters<typeof import("../src/api-client").postCapture>[0],
+		): Promise<CaptureApiResponse | null> => {
+			uploadedSessions.push(payload.session_id);
+			return { id: "cap-001", status: "ok" };
+		};
+
+		const captured = new Set([sessionId]);
+		await runCatchup({
+			activeSessionId: "sess-active",
+			isFirstRun: false,
+			stateDir,
+			projectsDir,
+			resolveAuthFn: fakeResolveAuth,
+			postCaptureFn: fakePostCapture,
+			markCapturedFn: async () => {},
+			isAlreadyCapturedFn: async (key) => captured.has(key),
+		});
+
+		expect(uploadedSessions.length).toBe(0);
+	});
+});

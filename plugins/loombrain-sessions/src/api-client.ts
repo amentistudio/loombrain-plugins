@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import type { CaptureApiPayload, CaptureApiResponse, CaptureChunk, CliConfig } from "./types";
-import { logError } from "./logger";
+import { logError, getStateDir } from "./logger";
 
 const DEFAULT_API_URL = "https://api.loombrain.com";
 const DEFAULT_CONFIG_PATH = join(homedir(), ".config", "loombrain", "config.json");
@@ -132,7 +132,18 @@ export async function postCapture(
 			});
 
 			if (res.ok) {
-				return (await res.json()) as CaptureApiResponse;
+				const resp = (await res.json()) as CaptureApiResponse;
+				// Write success marker for resurrection scan
+				try {
+					const { writeFile, mkdir } = await import("node:fs/promises");
+					const { join } = await import("node:path");
+					const dir = getStateDir();
+					await mkdir(dir, { recursive: true });
+					await writeFile(join(dir, `.success.${payload.session_id}`), new Date().toISOString());
+				} catch {
+					// Non-critical — marker is only used by one-time resurrection scan
+				}
+				return resp;
 			}
 
 			if (res.status === 429 && attempt === 0) {
@@ -143,11 +154,7 @@ export async function postCapture(
 
 			if (res.status === 403) {
 				const body = await res.text();
-				if (body.includes("episodic_memory")) {
-					await logError(sessionId, "Episodic memory not enabled for this tenant");
-				} else {
-					await logError(sessionId, `Auth failed (403): ${body.slice(0, 200)}`);
-				}
+				await logError(sessionId, `Auth failed (403): ${body.slice(0, 200)}`);
 				return null;
 			}
 
