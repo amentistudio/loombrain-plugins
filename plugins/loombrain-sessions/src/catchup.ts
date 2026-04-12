@@ -80,10 +80,14 @@ export async function isAuthCooldownActive(stateDir?: string): Promise<boolean> 
  * Write auth cooldown timestamp (now + durationMs) to state file.
  */
 export async function setAuthCooldown(durationMs: number, stateDir?: string): Promise<void> {
-	const dir = stateDir ?? getStateDir();
-	await mkdir(dir, { recursive: true });
-	const until = new Date(Date.now() + durationMs).toISOString();
-	await writeFile(join(dir, COOLDOWN_FILE), until, "utf-8");
+	try {
+		const dir = stateDir ?? getStateDir();
+		await mkdir(dir, { recursive: true });
+		const until = new Date(Date.now() + durationMs).toISOString();
+		await writeFile(join(dir, COOLDOWN_FILE), until, "utf-8");
+	} catch {
+		// Best-effort — hook must always exit 0
+	}
 }
 
 /**
@@ -248,43 +252,57 @@ export async function runResurrectionScan(options: {
 		// False-captured — attempt re-upload
 		await logInfo(sessionId, `Resurrection: re-uploading false-captured session`);
 
-		let content: string;
-		try {
-			content = await readFile(foundPath, "utf-8");
-		} catch {
-			continue;
-		}
+		// Use per-session lock to prevent double-fire resurrection
+		const lockResult = await withSessionLock(
+			sessionId,
+			async () => {
+				// Re-check .success marker inside lock (another process may have written it)
+				if (existsSync(join(stateDir, `.success.${sessionId}`))) return "skipped" as const;
 
-		const projectDirName = basename(dirname(foundPath));
-		const cwd = deriveCwdFromProjectDir(projectDirName) ?? "/";
+				let content: string;
+				try {
+					content = await readFile(foundPath, "utf-8");
+				} catch {
+					return "failed" as const;
+				}
 
-		let processed: Awaited<ReturnType<typeof processSession>>;
-		try {
-			processed = await processSessionFn(sessionId, content, cwd);
-		} catch {
-			continue;
-		}
+				const projectDirName = basename(dirname(foundPath));
+				const cwd = deriveCwdFromProjectDir(projectDirName) ?? "/";
 
-		if (processed.skipped || !processed.chunks?.length) continue;
+				let processed: Awaited<ReturnType<typeof processSession>>;
+				try {
+					processed = await processSessionFn(sessionId, content, cwd);
+				} catch {
+					return "failed" as const;
+				}
 
-		let chunksUploaded = 0;
-		for (const chunk of processed.chunks) {
-			const payload = buildCapturePayload(chunk);
-			const response = await postCaptureFn(payload, auth, sessionId);
-			if (response) {
-				await markCapturedFn(chunk.session_id);
-				chunksUploaded++;
-			}
-		}
-		// Only mark as fully resurrected when ALL chunks succeeded
-		if (chunksUploaded === processed.chunks.length) {
+				if (processed.skipped || !processed.chunks?.length) return "skipped" as const;
+
+				let chunksUploaded = 0;
+				for (const chunk of processed.chunks) {
+					const payload = buildCapturePayload(chunk);
+					const response = await postCaptureFn(payload, auth, sessionId);
+					if (response) {
+						await markCapturedFn(chunk.session_id);
+						chunksUploaded++;
+					}
+				}
+				if (chunksUploaded === processed.chunks.length) {
+					try {
+						await writeFile(join(stateDir, `.success.${sessionId}`), new Date().toISOString());
+					} catch {
+						// Non-critical
+					}
+					return "resurrected" as const;
+				}
+				return "failed" as const;
+			},
+			stateDir,
+		);
+
+		if (lockResult === "resurrected") {
 			resurrected++;
-			try {
-				await writeFile(join(stateDir, `.success.${sessionId}`), new Date().toISOString());
-			} catch {
-				// Non-critical
-			}
-		} else if (chunksUploaded < processed.chunks.length) {
+		} else if (lockResult === "failed") {
 			failed++;
 		}
 	}
@@ -345,24 +363,19 @@ export async function runCatchup(options: {
 		return result;
 	}
 
-	// 2. Build captured sessions set for filtering
-	// Use injected isAlreadyCapturedFn if provided (for tests), otherwise use a no-op
-	// (findOrphanTranscripts handles filtering via the Set)
-	// For production: read the captured-sessions file directly
+	// 2. Build captured sessions set — always read from file (needed for both
+	// orphan filtering and resurrection scan's pre-run snapshot)
 	const capturedSessions = new Set<string>();
-	if (!isAlreadyCapturedFn) {
-		// Read captured sessions from file
-		try {
-			const capturedFile = join(stateDir, "captured-sessions");
-			if (existsSync(capturedFile)) {
-				const content = await readFile(capturedFile, "utf-8");
-				for (const line of content.split("\n")) {
-					if (line.trim()) capturedSessions.add(line.trim());
-				}
+	try {
+		const capturedFile = join(stateDir, "captured-sessions");
+		if (existsSync(capturedFile)) {
+			const content = await readFile(capturedFile, "utf-8");
+			for (const line of content.split("\n")) {
+				if (line.trim()) capturedSessions.add(line.trim());
 			}
-		} catch {
-			// Ignore read errors
 		}
+	} catch {
+		// Ignore read errors
 	}
 
 	// 3. Determine lookback
@@ -483,21 +496,13 @@ export async function runCatchup(options: {
 	if (isFirstRun) {
 		let resurrectionClean = false;
 		try {
-			// Read captured-sessions from stateDir (may differ from logger stateDir in tests)
-			const capturedSessionsForResurrection = new Set<string>();
-			const capturedFile = join(stateDir, "captured-sessions");
-			if (existsSync(capturedFile)) {
-				const content = await readFile(capturedFile, "utf-8");
-				for (const line of content.split("\n")) {
-					if (line.trim()) capturedSessionsForResurrection.add(line.trim());
-				}
-			}
-
-			if (capturedSessionsForResurrection.size > 0) {
+			// Use the pre-run capturedSessions snapshot (built at step 2, before catchup loop)
+			// to avoid re-uploading sessions that THIS run just captured
+			if (capturedSessions.size > 0) {
 				const resurrectionResult = await runResurrectionScan({
 					stateDir,
 					projectsDir,
-					capturedSessions: capturedSessionsForResurrection,
+					capturedSessions,
 					lookbackDays: CATCHUP_FIRST_RUN_LOOKBACK_DAYS,
 					auth,
 					processSessionFn,
