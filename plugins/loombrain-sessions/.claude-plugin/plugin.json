@@ -37,6 +37,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/catchup-wrapper.sh",
+            "async": true,
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }

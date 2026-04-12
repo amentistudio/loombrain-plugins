@@ -2,10 +2,11 @@ import { readFile, unlink } from "node:fs/promises";
 import { parseSessionLines } from "./converter";
 import { splitIntoChunks } from "./splitter";
 import { getProjectHint } from "./git-hint";
-import { resolveAuth, buildCapturePayload, postCapture } from "./api-client";
+import { resolveAuth, buildCapturePayload, postCapture, type AuthResult } from "./api-client";
 import { isAlreadyCaptured, markCaptured } from "./idempotency";
 import { logError, logInfo } from "./logger";
-import type { CaptureChunk, EpisodeEvent, SessionHookInput } from "./types";
+import { withSessionLock } from "./locks";
+import type { CaptureApiResponse, CaptureChunk, EpisodeEvent, SessionHookInput } from "./types";
 
 const MIN_MEANINGFUL_EVENTS = 5;
 
@@ -78,67 +79,143 @@ export async function processSession(
 }
 
 /**
- * Main entry point for the SessionEnd hook.
- * Reads stdin, processes transcript, uploads chunks to LoomBrain.
+ * Parse --mode argument from argv.
+ * Returns 'start' or 'end'. Defaults to 'end' for backwards compatibility.
+ */
+export function parseMode(argv: string[]): "start" | "end" {
+	const idx = argv.indexOf("--mode");
+	if (idx !== -1 && idx + 1 < argv.length) {
+		const mode = argv[idx + 1];
+		if (mode === "start" || mode === "end") return mode;
+	}
+	return "end"; // default for backwards compat
+}
+
+export interface SessionEndOptions {
+	stateDir?: string;
+	postCaptureFn?: (
+		payload: Parameters<typeof postCapture>[0],
+		auth: AuthResult,
+		sessionId: string,
+	) => Promise<CaptureApiResponse | null>;
+	markCapturedFn?: (key: string) => Promise<void>;
+	isAlreadyCapturedFn?: (key: string) => Promise<boolean>;
+	resolveAuthFn?: typeof resolveAuth;
+}
+
+/**
+ * SessionEnd handler: reads transcript, uploads chunks to LoomBrain.
+ * Accepts optional injectable dependencies for testing.
+ */
+export async function runSessionEnd(
+	input: SessionHookInput,
+	options: SessionEndOptions = {},
+): Promise<void> {
+	const sessionId = input.session_id;
+	const {
+		stateDir,
+		postCaptureFn = postCapture,
+		markCapturedFn = markCaptured,
+		isAlreadyCapturedFn = isAlreadyCaptured,
+		resolveAuthFn = resolveAuth,
+	} = options;
+
+	await logInfo(sessionId, `Processing session from ${input.transcript_path}`);
+
+	if (!input.transcript_path) {
+		await logError(sessionId, "No transcript_path provided");
+		return;
+	}
+
+	if (await isAlreadyCapturedFn(sessionId)) return;
+
+	// Wrap the entire processing in a session lock
+	await withSessionLock(
+		sessionId,
+		async () => {
+			const content = await readFile(input.transcript_path, "utf-8");
+			const result = await processSession(sessionId, content, input.cwd);
+
+			if (result.skipped || !result.chunks) return;
+
+			const auth = await resolveAuthFn();
+			if (!auth) {
+				await logError(
+					sessionId,
+					"Not logged in — session not captured. Run /lb:login or set LB_TOKEN env var.",
+				);
+				return;
+			}
+
+			let uploaded = 0;
+			for (const chunk of result.chunks) {
+				if (await isAlreadyCapturedFn(chunk.session_id)) continue;
+
+				const payload = buildCapturePayload(chunk);
+				const response = await postCaptureFn(payload, auth, sessionId);
+
+				if (response) {
+					await markCapturedFn(chunk.session_id);
+					uploaded++;
+				}
+			}
+
+			// FIX (FR-7): Only mark root session as captured when ALL chunks succeeded
+			if (uploaded === result.chunks.length) {
+				await markCapturedFn(sessionId);
+			}
+
+			await logInfo(
+				sessionId,
+				`Capture complete: ${uploaded}/${result.chunks.length} chunk(s) uploaded`,
+			);
+		},
+		stateDir,
+	);
+}
+
+/**
+ * SessionStart handler: runs catchup scan for orphaned transcripts.
+ */
+async function runSessionStart(input: SessionHookInput): Promise<void> {
+	const sessionId = input.session_id;
+	await logInfo(sessionId, "Catchup hook started");
+
+	const { existsSync } = await import("node:fs");
+	const { join } = await import("node:path");
+	const { getStateDir } = await import("./logger");
+	const { runCatchup } = await import("./catchup");
+
+	const stateDir = getStateDir();
+	const isFirstRun = !existsSync(join(stateDir, ".v3-marker"));
+
+	await runCatchup({
+		activeSessionId: sessionId,
+		isFirstRun,
+	});
+}
+
+/**
+ * Main entry point for the capture hook (SessionEnd and SessionStart).
  * ALWAYS exits 0.
  */
 async function main(): Promise<void> {
 	let sessionId = "unknown";
 
 	try {
-		await logInfo(sessionId, "Capture hook started");
+		const mode = parseMode(process.argv.slice(2));
+		await logInfo(sessionId, `Capture hook started (mode=${mode})`);
 
 		// Read input: prefer --stdin-file, fall back to stdin
 		const { raw } = await readHookInput(process.argv.slice(2));
 		const input: SessionHookInput = JSON.parse(raw);
 		sessionId = input.session_id;
 
-		await logInfo(sessionId, `Processing session from ${input.transcript_path}`);
-
-		if (!input.transcript_path) {
-			await logError(sessionId, "No transcript_path provided");
-			return;
+		if (mode === "start") {
+			await runSessionStart(input);
+		} else {
+			await runSessionEnd(input);
 		}
-
-		// Check full-session idempotency
-		if (await isAlreadyCaptured(sessionId)) return;
-
-		// Read and process transcript
-		const content = await readFile(input.transcript_path, "utf-8");
-		const result = await processSession(sessionId, content, input.cwd);
-
-		if (result.skipped || !result.chunks) return;
-
-		// Resolve auth
-		const auth = await resolveAuth();
-		if (!auth) {
-			await logError(
-				sessionId,
-				"Not logged in — session not captured. Run /lb:login or set LB_TOKEN env var.",
-			);
-			return;
-		}
-
-		// Upload each chunk, tracking successful uploads
-		let uploaded = 0;
-		for (const chunk of result.chunks) {
-			if (await isAlreadyCaptured(chunk.session_id)) continue;
-
-			const payload = buildCapturePayload(chunk);
-			const response = await postCapture(payload, auth, sessionId);
-
-			if (response) {
-				await markCaptured(chunk.session_id);
-				uploaded++;
-			}
-		}
-
-		// Mark root session as captured if all chunks succeeded
-		await markCaptured(sessionId);
-		await logInfo(
-			sessionId,
-			`Capture complete: ${uploaded}/${result.chunks.length} chunk(s) uploaded`,
-		);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		await logError(sessionId, `Unhandled error: ${msg}`);
