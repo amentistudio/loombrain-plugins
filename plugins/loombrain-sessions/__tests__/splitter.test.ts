@@ -69,4 +69,30 @@ describe("splitIntoChunks", () => {
 		expect(chunks[0].title).toBe("Claude Code session (part 1 of 2)");
 		expect(chunks[1].title).toBe("Claude Code session (part 2 of 2)");
 	});
+
+	test("single chunk with paraHint includes repo name in title", () => {
+		const events = Array.from({ length: 10 }, (_, i) => makeEvent(i));
+		const chunks = splitIntoChunks(events, "sess-8", "loombrain");
+		expect(chunks).toHaveLength(1);
+		expect(chunks[0].title).toBe("loombrain: Claude Code session");
+	});
+
+	test("multi-chunk with paraHint includes repo name in title", () => {
+		const events = Array.from({ length: 300 }, (_, i) => makeEvent(i));
+		const chunks = splitIntoChunks(events, "sess-9", "myrepo");
+		expect(chunks[0].title).toBe("myrepo: Claude Code session (part 1 of 2)");
+		expect(chunks[1].title).toBe("myrepo: Claude Code session (part 2 of 2)");
+	});
+
+	test("no paraHint leaves title unchanged (backward compat)", () => {
+		const events = Array.from({ length: 10 }, (_, i) => makeEvent(i));
+		const chunks = splitIntoChunks(events, "sess-10");
+		expect(chunks[0].title).toBe("Claude Code session");
+	});
+
+	test("undefined paraHint leaves title unchanged", () => {
+		const events = Array.from({ length: 10 }, (_, i) => makeEvent(i));
+		const chunks = splitIntoChunks(events, "sess-11", undefined);
+		expect(chunks[0].title).toBe("Claude Code session");
+	});
 });

@@ -66,9 +66,9 @@ export async function processSession(
 	}
 
 	const paraHint = await getProjectHint(cwd);
-	const chunks = splitIntoChunks(events, sessionId);
+	const chunks = splitIntoChunks(events, sessionId, paraHint ?? undefined);
 
-	// Attach para_hint to all chunks
+	// Attach para_hint to all chunks for PARA classification
 	if (paraHint) {
 		for (const chunk of chunks) {
 			chunk.para_hint = paraHint;

@@ -1,6 +1,6 @@
 {
   "name": "loombrain-sessions",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
   "author": {
     "name": "Ladislav Martincik",
@@ -9,7 +9,12 @@
   "homepage": "https://github.com/amentistudio/loombrain-plugins",
   "repository": "https://github.com/amentistudio/loombrain-plugins",
   "license": "MIT",
-  "keywords": ["loombrain", "session-capture", "episodic-memory", "claude-code"],
+  "keywords": [
+    "loombrain",
+    "session-capture",
+    "episodic-memory",
+    "claude-code"
+  ],
   "commands": {
     "lb:login": {
       "description": "Log in to LoomBrain to enable session capture",
