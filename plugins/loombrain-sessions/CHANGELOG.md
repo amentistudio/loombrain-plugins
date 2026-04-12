@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.1] - 2026-04-12
+
+### Changed
+- Session titles now include repo name: "loombrain: Claude Code session (part 1 of 3)" instead of generic "Claude Code session (part 1 of 3)"
+
 ## [0.3.0] - 2026-04-12
 
 ### Fixed
