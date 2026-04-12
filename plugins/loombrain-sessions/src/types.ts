@@ -12,12 +12,31 @@ export interface EpisodeEvent {
 	metadata?: Record<string, unknown>;
 }
 
-/** Input from Claude Code SessionEnd hook stdin */
+/** Input from Claude Code SessionEnd/SessionStart hook stdin */
 export interface SessionHookInput {
 	session_id: string;
 	transcript_path: string;
 	cwd: string;
+	hook_event_name?: string;
+	reason?: string;
+	source?: string;
 }
+
+/** Content block inside a tool_result or message content array */
+export interface ContentBlock {
+	type: string;
+	text?: string;
+	thinking?: string;
+	id?: string;
+	name?: string;
+	input?: unknown;
+	tool_use_id?: string;
+	content?: string | ContentBlock[];
+	source?: unknown;
+}
+
+/** tool_result content can be a plain string or an array of content blocks */
+export type ToolResultContent = string | ContentBlock[];
 
 /** A chunk of events ready for API submission */
 export interface CaptureChunk {

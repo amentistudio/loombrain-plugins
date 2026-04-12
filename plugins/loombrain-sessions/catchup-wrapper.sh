@@ -15,11 +15,8 @@ STATE_DIR="$HOME/.loombrain-sessions"
   STDIN_FILE="$STATE_DIR/.stdin.$$.json"
   cat > "$STDIN_FILE"
 
-  # Launch bun detached from Claude Code's process group:
-  #   nohup  → ignore SIGHUP when parent exits
-  #   &      → background the process
-  #   disown → remove from shell job table
-  nohup bun run "$SCRIPT_DIR/src/capture-hook.ts" --mode end --stdin-file "$STDIN_FILE" \
+  # Launch bun detached from Claude Code's process group
+  nohup bun run "$SCRIPT_DIR/src/capture-hook.ts" --mode start --stdin-file "$STDIN_FILE" \
     </dev/null >>"$STATE_DIR/capture.log" 2>&1 &
   disown || true
 } || true

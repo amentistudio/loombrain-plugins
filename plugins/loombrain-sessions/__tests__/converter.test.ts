@@ -207,6 +207,107 @@ describe("parseSessionLines", () => {
 		expect(events[0].content).toBe("output text");
 	});
 
+	test("tool_result with string content passes through unchanged", () => {
+		const lines = [
+			line({
+				type: "tool_result",
+				timestamp: TS,
+				tool_use_id: "call_str",
+				content: "plain string result",
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].content).toBe("plain string result");
+	});
+
+	test("tool_result with array content containing single text block", () => {
+		const lines = [
+			line({
+				type: "tool_result",
+				timestamp: TS,
+				tool_use_id: "call_arr1",
+				content: [{ type: "text", text: "hi" }],
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].role).toBe("tool_result");
+		expect(events[0].content).toBe("hi");
+	});
+
+	test("tool_result with array content containing text + image blocks", () => {
+		const lines = [
+			line({
+				type: "tool_result",
+				timestamp: TS,
+				tool_use_id: "call_arr2",
+				content: [
+					{ type: "text", text: "some text" },
+					{ type: "image", source: { url: "https://example.com/img.png" } },
+				],
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].content).toBe("some text\n[image]");
+	});
+
+	test("tool_result with array content containing unknown block type", () => {
+		const lines = [
+			line({
+				type: "tool_result",
+				timestamp: TS,
+				tool_use_id: "call_arr3",
+				content: [{ type: "custom_type" }],
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].content).toBe("[unknown: custom_type]");
+	});
+
+	test("tool_result with empty array content", () => {
+		const lines = [
+			line({
+				type: "tool_result",
+				timestamp: TS,
+				tool_use_id: "call_arr4",
+				content: [],
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].content).toBe("");
+	});
+
+	test("nested tool_result in user message with array content", () => {
+		const lines = [
+			line({
+				type: "user",
+				timestamp: TS,
+				message: {
+					role: "user",
+					content: [
+						{
+							type: "tool_result",
+							tool_use_id: "call_nested",
+							content: [
+								{ type: "text", text: "nested text" },
+								{ type: "image" },
+							],
+						},
+					],
+				},
+			}),
+		];
+		const events = parseSessionLines(lines);
+		expect(events).toHaveLength(1);
+		expect(events[0].role).toBe("tool_result");
+		expect(events[0].tool_call_id).toBe("call_nested");
+		expect(events[0].content).toBe("nested text\n[image]");
+	});
+
 	test("assigns monotonic seq numbers", () => {
 		const lines = [
 			line({ type: "user", timestamp: TS, message: { role: "user", content: "q1" } }),

@@ -9,14 +9,14 @@ interface ContentBlock {
 	name?: string;
 	input?: unknown;
 	tool_use_id?: string;
-	content?: string;
+	content?: string | ContentBlock[];
 }
 
 interface JsonlLine {
 	type: string;
 	timestamp?: string;
 	isMeta?: boolean;
-	content?: string;
+	content?: string | ContentBlock[];
 	tool_use_id?: string;
 	message?: {
 		role: string;
@@ -25,6 +25,18 @@ interface JsonlLine {
 }
 
 const SKIP_TYPES = new Set(["file-history-snapshot", "attachment"]);
+
+export function stringifyToolResultContent(content: string | ContentBlock[]): string {
+	if (typeof content === "string") return content;
+	if (content.length === 0) return "";
+	return content
+		.map((block) => {
+			if (block.type === "text") return block.text ?? "";
+			if (block.type === "image") return "[image]";
+			return `[unknown: ${block.type}]`;
+		})
+		.join("\n");
+}
 
 /**
  * Parse an array of JSONL line strings into EpisodeEvent[].
@@ -54,10 +66,10 @@ export function parseSessionLines(lines: string[]): EpisodeEvent[] {
 			processAssistantLine(parsed, ts, events);
 		} else if (parsed.type === "system") {
 			if (parsed.content) {
-				pushEvent(events, "system", truncateContent(parsed.content), ts);
+				pushEvent(events, "system", truncateContent(parsed.content as string), ts);
 			}
 		} else if (parsed.type === "tool_result") {
-			const content = parsed.content ?? "";
+			const content = stringifyToolResultContent(parsed.content ?? "");
 			pushEvent(events, "tool_result", truncateContent(content), ts, undefined, parsed.tool_use_id);
 		}
 	}
@@ -94,7 +106,7 @@ function processUserLine(parsed: JsonlLine, ts: string, events: EpisodeEvent[]):
 		pushEvent(
 			events,
 			"tool_result",
-			truncateContent(tr.content ?? ""),
+			truncateContent(stringifyToolResultContent(tr.content ?? "")),
 			ts,
 			undefined,
 			tr.tool_use_id,

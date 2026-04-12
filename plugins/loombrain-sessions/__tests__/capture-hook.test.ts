@@ -3,8 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { processSession, countMeaningfulEvents, readHookInput } from "../src/capture-hook";
-import type { EpisodeEvent } from "../src/types";
+import { processSession, countMeaningfulEvents, readHookInput, parseMode, runSessionEnd } from "../src/capture-hook";
+import type { EpisodeEvent, SessionHookInput } from "../src/types";
 
 describe("countMeaningfulEvents", () => {
 	test("counts only user and assistant events", () => {
@@ -136,5 +136,136 @@ describe("readHookInput", () => {
 		const result = await readHookInput(["--stdin-file"], stream);
 		expect(result.tempFile).toBeUndefined();
 		expect(result.raw).toBe(testPayload);
+	});
+});
+
+describe("parseMode", () => {
+	test("returns 'end' as default when --mode not present", () => {
+		expect(parseMode([])).toBe("end");
+	});
+
+	test("returns 'start' when --mode start is passed", () => {
+		expect(parseMode(["--mode", "start"])).toBe("start");
+	});
+
+	test("returns 'end' when --mode end is passed", () => {
+		expect(parseMode(["--mode", "end"])).toBe("end");
+	});
+
+	test("returns 'end' for invalid mode values", () => {
+		expect(parseMode(["--mode", "invalid"])).toBe("end");
+	});
+});
+
+describe("markCaptured bug fix (FR-7)", () => {
+	let tempDir: string;
+
+	function makeTranscript(lineCount: number): string {
+		const TS = "2026-04-09T10:00:00.000Z";
+		const lines: string[] = [];
+		for (let i = 0; i < lineCount; i++) {
+			if (i % 2 === 0) {
+				lines.push(
+					JSON.stringify({
+						type: "user",
+						timestamp: TS,
+						message: { role: "user", content: `question ${i}` },
+					}),
+				);
+			} else {
+				lines.push(
+					JSON.stringify({
+						type: "assistant",
+						timestamp: TS,
+						message: {
+							role: "assistant",
+							content: [{ type: "text", text: `answer ${i}` }],
+						},
+					}),
+				);
+			}
+		}
+		return lines.join("\n");
+	}
+
+	beforeEach(async () => {
+		tempDir = await mkdtemp(join(tmpdir(), "fr7-test-"));
+	});
+
+	afterEach(async () => {
+		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	test("does not mark root session as captured when some chunks fail", async () => {
+		// Write a transcript file
+		const transcriptPath = join(tempDir, "sess-root.jsonl");
+		const transcript = makeTranscript(12);
+		await writeFile(transcriptPath, transcript);
+
+		// Write captured-sessions file (empty — none captured)
+		const capturedFile = join(tempDir, "captured-sessions");
+		await writeFile(capturedFile, "");
+
+		// Mock api-client to succeed for first chunk, fail for second
+		// We need processSession to return 2 chunks — use 600 lines
+		const bigTranscript = makeTranscript(600);
+		await writeFile(transcriptPath, bigTranscript);
+
+		const input: SessionHookInput = {
+			session_id: "sess-root-fr7a",
+			transcript_path: transcriptPath,
+			cwd: tempDir,
+		};
+
+		// Track markCaptured calls
+		const capturedKeys: string[] = [];
+		let callCount = 0;
+
+		await runSessionEnd(input, {
+			stateDir: tempDir,
+			postCaptureFn: async () => {
+				callCount++;
+				// Succeed for first chunk, fail for second
+				if (callCount === 1) return { id: "ok", session_id: "chunk-1" } as any;
+				return null;
+			},
+			markCapturedFn: async (key: string) => {
+				capturedKeys.push(key);
+			},
+			isAlreadyCapturedFn: async () => false,
+			resolveAuthFn: async () => ({ header: "ApiKey test", apiUrl: "http://localhost" }),
+		});
+
+		// Root session should NOT be marked captured (not all chunks succeeded)
+		expect(capturedKeys).not.toContain("sess-root-fr7a");
+		// The successful chunk IS marked captured
+		expect(capturedKeys.length).toBe(1);
+	});
+
+	test("marks root session as captured when all chunks succeed", async () => {
+		const transcriptPath = join(tempDir, "sess-root2.jsonl");
+		const bigTranscript = makeTranscript(600);
+		await writeFile(transcriptPath, bigTranscript);
+
+		const input: SessionHookInput = {
+			session_id: "sess-root-fr7b",
+			transcript_path: transcriptPath,
+			cwd: tempDir,
+		};
+
+		const capturedKeys: string[] = [];
+
+		await runSessionEnd(input, {
+			stateDir: tempDir,
+			postCaptureFn: async () => ({ id: "ok", session_id: "chunk" } as any),
+			markCapturedFn: async (key: string) => {
+				capturedKeys.push(key);
+			},
+			isAlreadyCapturedFn: async () => false,
+			resolveAuthFn: async () => ({ header: "ApiKey test", apiUrl: "http://localhost" }),
+		});
+
+		// Root session SHOULD be marked captured (all chunks succeeded)
+		expect(capturedKeys).toContain("sess-root-fr7b");
 	});
 });
