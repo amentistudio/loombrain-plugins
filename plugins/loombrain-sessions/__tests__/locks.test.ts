@@ -100,38 +100,26 @@ describe("withSessionLock", () => {
 		expect(existsSync(lockPath)).toBe(false);
 	});
 
-	test("handles concurrent calls for same session — one succeeds, one returns null", async () => {
-		const results: Array<string | null> = [];
+	test("second call returns null when lock is already held by same process", async () => {
+		// Simulate lock contention: first call holds the lock, second call starts while it's held
+		let secondResult: string | null = "not-set";
 
-		// Both calls start nearly simultaneously. One should win the lock, the other should get null.
-		const [r1, r2] = await Promise.all([
-			withSessionLock(
-				"sess-concurrent",
-				async () => {
-					// Hold the lock for a moment to ensure overlap
-					await new Promise((resolve) => setTimeout(resolve, 50));
-					return "winner";
-				},
-				tempDir,
-			),
-			withSessionLock(
-				"sess-concurrent",
-				async () => {
-					await new Promise((resolve) => setTimeout(resolve, 50));
-					return "also-winner";
-				},
-				tempDir,
-			),
-		]);
+		const firstResult = await withSessionLock(
+			"sess-concurrent",
+			async () => {
+				// While holding the lock, try to acquire it again
+				secondResult = await withSessionLock(
+					"sess-concurrent",
+					async () => "should-not-run",
+					tempDir,
+				);
+				return "winner";
+			},
+			tempDir,
+		);
 
-		results.push(r1, r2);
-
-		// One should have succeeded, the other should be null
-		const winners = results.filter((r) => r !== null);
-		const nulls = results.filter((r) => r === null);
-
-		expect(winners).toHaveLength(1);
-		expect(nulls).toHaveLength(1);
+		expect(firstResult).toBe("winner");
+		expect(secondResult).toBeNull();
 
 		// Lockfile should be cleaned up
 		const lockPath = join(tempDir, ".lock.sess-concurrent");

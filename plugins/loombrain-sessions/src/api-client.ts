@@ -156,6 +156,18 @@ export async function postCapture(
 				continue;
 			}
 
+			// 409 Conflict = already captured (server-side idempotency) — treat as success
+			if (res.status === 409) {
+				return { id: "already-captured", status: "duplicate" } as CaptureApiResponse;
+			}
+
+			// Retry transient server errors once
+			if (res.status >= 500 && attempt === 0) {
+				await logError(sessionId, `API error ${res.status} (will retry): ${(await res.text()).slice(0, 200)}`);
+				await new Promise((r) => setTimeout(r, 2000));
+				continue;
+			}
+
 			if (res.status === 403) {
 				const body = await res.text();
 				await logError(sessionId, `Auth failed (403): ${body.slice(0, 200)}`);
