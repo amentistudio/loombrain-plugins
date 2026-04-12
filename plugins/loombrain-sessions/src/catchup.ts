@@ -191,7 +191,7 @@ export async function runResurrectionScan(options: {
 		sessionId: string,
 	) => Promise<CaptureApiResponse | null>;
 	markCapturedFn: typeof markCaptured;
-}): Promise<{ rescanned: number; resurrected: number }> {
+}): Promise<{ rescanned: number; resurrected: number; failed: number }> {
 	const {
 		stateDir,
 		projectsDir,
@@ -206,6 +206,7 @@ export async function runResurrectionScan(options: {
 	const lookbackCutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
 	let rescanned = 0;
 	let resurrected = 0;
+	let failed = 0;
 
 	// Build a Map<sessionId, path> from a single glob scan (O(M) instead of O(N*M))
 	const sessionPathMap = new Map<string, string>();
@@ -222,10 +223,15 @@ export async function runResurrectionScan(options: {
 		const foundPath = sessionPathMap.get(sessionId);
 		if (!foundPath) continue;
 
-		// Check if within lookback window
+		// Check if within lookback window + size guard
 		try {
 			const fileStats = await stat(foundPath);
 			if (fileStats.mtimeMs < lookbackCutoff) continue;
+			if (fileStats.size === 0) continue;
+			if (fileStats.size > CATCHUP_MAX_FILE_BYTES) {
+				await logInfo(sessionId, `Resurrection: skipping oversized file (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
+				continue;
+			}
 		} catch {
 			continue;
 		}
@@ -270,18 +276,20 @@ export async function runResurrectionScan(options: {
 				chunksUploaded++;
 			}
 		}
-		if (chunksUploaded > 0) {
-			resurrected += chunksUploaded;
-			// Write root success marker so resurrection doesn't re-scan this session
+		// Only mark as fully resurrected when ALL chunks succeeded
+		if (chunksUploaded === processed.chunks.length) {
+			resurrected++;
 			try {
 				await writeFile(join(stateDir, `.success.${sessionId}`), new Date().toISOString());
 			} catch {
 				// Non-critical
 			}
+		} else if (chunksUploaded < processed.chunks.length) {
+			failed++;
 		}
 	}
 
-	return { rescanned, resurrected };
+	return { rescanned, resurrected, failed };
 }
 
 /**
@@ -473,6 +481,7 @@ export async function runCatchup(options: {
 
 	// 7b. Resurrection scan — only on first run (before writing .v3-marker)
 	if (isFirstRun) {
+		let resurrectionClean = false;
 		try {
 			// Read captured-sessions from stateDir (may differ from logger stateDir in tests)
 			const capturedSessionsForResurrection = new Set<string>();
@@ -496,33 +505,46 @@ export async function runCatchup(options: {
 					markCapturedFn,
 				});
 
-				if (resurrectionResult.resurrected > 0) {
+				if (resurrectionResult.resurrected > 0 || resurrectionResult.failed > 0) {
 					await logInfo(
 						activeSessionId,
-						`Resurrection scan: rescanned=${resurrectionResult.rescanned}, resurrected=${resurrectionResult.resurrected}`,
+						`Resurrection scan: rescanned=${resurrectionResult.rescanned}, resurrected=${resurrectionResult.resurrected}, failed=${resurrectionResult.failed}`,
 					);
 				}
+
+				// Only finalize migration if resurrection had no failures
+				// (failed sessions need another attempt on next first-run)
+				if (resurrectionResult.failed > 0) {
+					await logInfo(activeSessionId, "Resurrection: deferring .v3-marker due to failed sessions");
+				} else {
+					resurrectionClean = true;
+				}
+			} else {
+				resurrectionClean = true; // no candidates to process
 			}
 		} catch {
 			// Non-critical — resurrection scan must not block normal catchup
+			resurrectionClean = true; // don't block marker on scan crash
 		}
 
-		// 7c. Write .v3-marker unconditionally — means "migration attempted"
-		try {
-			await mkdir(stateDir, { recursive: true });
-			await writeFile(join(stateDir, V3_MARKER_FILE), new Date().toISOString(), "utf-8");
-		} catch {
-			// Non-critical
-		}
-
-		// 7d. Clean up .success.* markers — only needed during resurrection transition
-		try {
-			const successGlob = new Bun.Glob(".success.*");
-			for await (const relPath of successGlob.scan({ cwd: stateDir })) {
-				await unlink(join(stateDir, relPath)).catch(() => {});
+		// 7c. Write .v3-marker only when resurrection is clean (no partial failures)
+		if (resurrectionClean) {
+			try {
+				await mkdir(stateDir, { recursive: true });
+				await writeFile(join(stateDir, V3_MARKER_FILE), new Date().toISOString(), "utf-8");
+			} catch {
+				// Non-critical
 			}
-		} catch {
-			// Non-critical
+
+			// 7d. Clean up .success.* markers — only needed during resurrection transition
+			try {
+				const successGlob = new Bun.Glob(".success.*");
+				for await (const relPath of successGlob.scan({ cwd: stateDir })) {
+					await unlink(join(stateDir, relPath)).catch(() => {});
+				}
+			} catch {
+				// Non-critical
+			}
 		}
 	}
 
