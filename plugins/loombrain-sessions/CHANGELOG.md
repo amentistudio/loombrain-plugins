@@ -1,8 +1,13 @@
 # Changelog
 
-## [0.3.1] - 2026-04-12
+## [0.4.0] - 2026-04-12
+
+### Removed
+- **BREAKING:** SessionStart hook and catchup system (orphan recovery + resurrection scan) — caused backend flooding with duplicate entries
+- `parseMode()` and `--mode start` CLI argument
 
 ### Changed
+- Session capture is now forward-only: captured at session end, missed sessions are not retried
 - Session titles now include repo name: "loombrain: Claude Code session (part 1 of 3)" instead of generic "Claude Code session (part 1 of 3)"
 
 ## [0.3.0] - 2026-04-12
