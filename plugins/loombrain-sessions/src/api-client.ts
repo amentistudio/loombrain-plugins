@@ -7,6 +7,8 @@ import { logError, getStateDir } from "./logger";
 
 const DEFAULT_API_URL = "https://api.loombrain.com";
 const DEFAULT_CONFIG_PATH = join(homedir(), ".config", "loombrain", "config.json");
+const FETCH_TIMEOUT_MS = 30_000;
+const MAX_RETRY_AFTER_S = 30;
 
 export interface AuthResult {
 	header: string;
@@ -62,6 +64,7 @@ async function refreshToken(
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ refresh_token: config.refresh_token }),
+			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
 
 		if (!res.ok) return null;
@@ -129,17 +132,18 @@ export async function postCapture(
 					Authorization: auth.header,
 				},
 				body: JSON.stringify(payload),
+				signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 			});
 
 			if (res.ok) {
 				const resp = (await res.json()) as CaptureApiResponse;
-				// Write success marker for resurrection scan
+				// Write success marker for resurrection scan (only during v0.2→v0.3 transition)
 				try {
-					const { writeFile, mkdir } = await import("node:fs/promises");
-					const { join } = await import("node:path");
 					const dir = getStateDir();
-					await mkdir(dir, { recursive: true });
-					await writeFile(join(dir, `.success.${payload.session_id}`), new Date().toISOString());
+					if (!existsSync(join(dir, ".v3-marker"))) {
+						await mkdir(dir, { recursive: true });
+						await writeFile(join(dir, `.success.${payload.session_id}`), new Date().toISOString());
+					}
 				} catch {
 					// Non-critical — marker is only used by one-time resurrection scan
 				}
@@ -147,7 +151,7 @@ export async function postCapture(
 			}
 
 			if (res.status === 429 && attempt === 0) {
-				const retryAfter = Number(res.headers.get("Retry-After") ?? "2");
+				const retryAfter = Math.min(Number(res.headers.get("Retry-After") ?? "2"), MAX_RETRY_AFTER_S);
 				await new Promise((r) => setTimeout(r, retryAfter * 1000));
 				continue;
 			}

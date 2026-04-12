@@ -88,6 +88,18 @@ async function acquireLock(sessionId: string, lockPath: string): Promise<void> {
 		throw new Error("lock reclaim race — another process won");
 	}
 
+	// Verify we actually won the race — another process may have also renamed
+	try {
+		const verification = await Bun.file(lockPath).text();
+		const verifiedPid = parsePid(verification);
+		if (verifiedPid !== process.pid) {
+			throw new Error(`lock reclaim race — process ${verifiedPid} won`);
+		}
+	} catch (err) {
+		if ((err as Error).message.includes("lock reclaim race")) throw err;
+		throw new Error("lock verification failed after reclaim");
+	}
+
 	await logInfo(sessionId, `withSessionLock: reclaimed lock from dead process ${pid}`);
 }
 

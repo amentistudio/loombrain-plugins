@@ -467,7 +467,7 @@ describe("runCatchup", () => {
 		expect(existsSync(markerPath)).toBe(true);
 	});
 
-	test("does not write .v3-marker when no uploads succeed", async () => {
+	test("writes .v3-marker on first run even when no uploads succeed", async () => {
 		// Plant a file that will be skipped (too few events)
 		await plantOrphan("sess-short", 2, makeTranscriptContent(2));
 
@@ -484,8 +484,9 @@ describe("runCatchup", () => {
 		});
 
 		expect(result.uploaded).toBe(0);
+		// .v3-marker is written unconditionally on first run — means "migration attempted"
 		const markerPath = join(stateDir, ".v3-marker");
-		expect(existsSync(markerPath)).toBe(false);
+		expect(existsSync(markerPath)).toBe(true);
 	});
 
 	test("returns cooledDown when auth cooldown is active", async () => {

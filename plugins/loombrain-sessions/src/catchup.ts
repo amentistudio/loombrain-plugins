@@ -29,6 +29,7 @@ export const CATCHUP_LOOKBACK_DAYS = 7;
 export const CATCHUP_FIRST_RUN_LOOKBACK_DAYS = 30;
 export const CATCHUP_MAX_UPLOADS_PER_RUN = 20;
 export const CATCHUP_QUIESCENCE_MS = 120_000;
+export const CATCHUP_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50MB — skip oversized transcripts to prevent OOM
 
 const COOLDOWN_FILE = ".auth-cooldown-until";
 const V3_MARKER_FILE = ".v3-marker";
@@ -47,6 +48,11 @@ export function extractSessionIdFromPath(filePath: string): string {
  * The dir name is the path with `/` replaced by `-`.
  * `-Users-x-project` → `/Users/x/project`
  * Returns null if the path doesn't start with `-`.
+ *
+ * KNOWN LIMITATION: This encoding is lossy — hyphens in the original path
+ * (e.g., `/Users/x/my-project`) are indistinguishable from path separators.
+ * The result is best-effort and used only for para_hint; catchup uploads
+ * with null para_hint are acceptable.
  */
 export function deriveCwdFromProjectDir(projectDir: string): string | null {
 	if (!projectDir.startsWith("-")) return null;
@@ -141,6 +147,12 @@ export async function findOrphanTranscripts(options: {
 		// Skip empty files
 		if (fileStats.size === 0) continue;
 
+		// Skip oversized files to prevent OOM (mark as captured to avoid infinite retry)
+		if (fileStats.size > CATCHUP_MAX_FILE_BYTES) {
+			await logInfo(sessionId, `Catchup: skipping oversized file (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
+			continue;
+		}
+
 		// Skip files outside lookback window
 		if (mtimeMs < lookbackCutoff) continue;
 
@@ -195,21 +207,23 @@ export async function runResurrectionScan(options: {
 	let rescanned = 0;
 	let resurrected = 0;
 
-	for (const sessionId of capturedSessions) {
-		// Find the JSONL file for this session
-		const glob = new Bun.Glob(`*/${sessionId}.jsonl`);
-		let foundPath: string | null = null;
-
-		for await (const relPath of glob.scan({ cwd: projectsDir })) {
-			foundPath = join(projectsDir, relPath);
-			break;
+	// Build a Map<sessionId, path> from a single glob scan (O(M) instead of O(N*M))
+	const sessionPathMap = new Map<string, string>();
+	const allGlob = new Bun.Glob("*/*.jsonl");
+	for await (const relPath of allGlob.scan({ cwd: projectsDir })) {
+		const filePath = join(projectsDir, relPath);
+		const sid = extractSessionIdFromPath(filePath);
+		if (capturedSessions.has(sid)) {
+			sessionPathMap.set(sid, filePath);
 		}
+	}
 
+	for (const sessionId of capturedSessions) {
+		const foundPath = sessionPathMap.get(sessionId);
 		if (!foundPath) continue;
 
 		// Check if within lookback window
 		try {
-			const { stat } = await import("node:fs/promises");
 			const fileStats = await stat(foundPath);
 			if (fileStats.mtimeMs < lookbackCutoff) continue;
 		} catch {
@@ -247,12 +261,22 @@ export async function runResurrectionScan(options: {
 
 		if (processed.skipped || !processed.chunks?.length) continue;
 
+		let chunksUploaded = 0;
 		for (const chunk of processed.chunks) {
 			const payload = buildCapturePayload(chunk);
 			const response = await postCaptureFn(payload, auth, sessionId);
 			if (response) {
 				await markCapturedFn(chunk.session_id);
-				resurrected++;
+				chunksUploaded++;
+			}
+		}
+		if (chunksUploaded > 0) {
+			resurrected += chunksUploaded;
+			// Write root success marker so resurrection doesn't re-scan this session
+			try {
+				await writeFile(join(stateDir, `.success.${sessionId}`), new Date().toISOString());
+			} catch {
+				// Non-critical
 			}
 		}
 	}
@@ -411,6 +435,11 @@ export async function runCatchup(options: {
 				// Upload each chunk
 				let chunkUploaded = 0;
 				for (const chunk of processed.chunks) {
+					// Skip already-captured chunks (crash-retry safety)
+					if (isAlreadyCapturedFn && (await isAlreadyCapturedFn(chunk.session_id))) {
+						chunkUploaded++;
+						continue;
+					}
 					const payload = buildCapturePayload(chunk);
 					const response = await postCaptureFn(payload, auth, orphan.sessionId);
 					if (response) {
@@ -421,7 +450,8 @@ export async function runCatchup(options: {
 					}
 				}
 
-				if (chunkUploaded > 0) {
+				// Only mark root session captured when ALL chunks succeeded
+				if (chunkUploaded === processed.chunks.length) {
 					await markCapturedFn(orphan.sessionId);
 					return "uploaded" as const;
 				}
@@ -442,18 +472,8 @@ export async function runCatchup(options: {
 		// "skipped" doesn't increment any counter
 	}
 
-	// 7. Write .v3-marker on first successful run
-	if (isFirstRun && result.uploaded > 0) {
-		try {
-			await mkdir(stateDir, { recursive: true });
-			await writeFile(join(stateDir, V3_MARKER_FILE), new Date().toISOString(), "utf-8");
-		} catch {
-			// Non-critical
-		}
-	}
-
-	// 7b. Resurrection scan — only on first run
-	if (isFirstRun && result.uploaded >= 0) {
+	// 7b. Resurrection scan — only on first run (before writing .v3-marker)
+	if (isFirstRun) {
 		try {
 			// Read captured-sessions from stateDir (may differ from logger stateDir in tests)
 			const capturedSessionsForResurrection = new Set<string>();
@@ -486,6 +506,24 @@ export async function runCatchup(options: {
 			}
 		} catch {
 			// Non-critical — resurrection scan must not block normal catchup
+		}
+
+		// 7c. Write .v3-marker unconditionally — means "migration attempted"
+		try {
+			await mkdir(stateDir, { recursive: true });
+			await writeFile(join(stateDir, V3_MARKER_FILE), new Date().toISOString(), "utf-8");
+		} catch {
+			// Non-critical
+		}
+
+		// 7d. Clean up .success.* markers — only needed during resurrection transition
+		try {
+			const successGlob = new Bun.Glob(".success.*");
+			for await (const relPath of successGlob.scan({ cwd: stateDir })) {
+				await unlink(join(stateDir, relPath)).catch(() => {});
+			}
+		} catch {
+			// Non-critical
 		}
 	}
 

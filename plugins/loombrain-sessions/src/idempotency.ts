@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { getStateDir } from "./logger";
 import { join } from "node:path";
@@ -39,7 +39,10 @@ async function rotateIfNeeded(): Promise<void> {
 		const lines = content.split("\n").filter(Boolean);
 		if (lines.length > MAX_ENTRIES) {
 			const kept = lines.slice(-KEEP_ENTRIES);
-			await writeFile(CAPTURED_FILE, `${kept.join("\n")}\n`);
+			// Atomic rotation via tmp+rename to prevent concurrent write corruption
+			const tmpFile = `${CAPTURED_FILE}.tmp.${process.pid}`;
+			await writeFile(tmpFile, `${kept.join("\n")}\n`);
+			await rename(tmpFile, CAPTURED_FILE);
 		}
 	} catch {
 		// Must never throw
