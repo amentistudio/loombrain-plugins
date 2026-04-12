@@ -147,7 +147,7 @@ export async function findOrphanTranscripts(options: {
 		// Skip empty files
 		if (fileStats.size === 0) continue;
 
-		// Skip oversized files to prevent OOM (mark as captured to avoid infinite retry)
+		// Skip oversized files to prevent OOM (re-scanned each run but skipped instantly)
 		if (fileStats.size > CATCHUP_MAX_FILE_BYTES) {
 			await logInfo(sessionId, `Catchup: skipping oversized file (${Math.round(fileStats.size / 1024 / 1024)}MB)`);
 			continue;
@@ -345,7 +345,7 @@ export async function runCatchup(options: {
 	if (!isAlreadyCapturedFn) {
 		// Read captured sessions from file
 		try {
-			const capturedFile = join(getStateDir(), "captured-sessions");
+			const capturedFile = join(stateDir, "captured-sessions");
 			if (existsSync(capturedFile)) {
 				const content = await readFile(capturedFile, "utf-8");
 				for (const line of content.split("\n")) {
