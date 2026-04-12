@@ -32,3 +32,7 @@ Auth is resolved from (in order):
 - All errors are logged to `~/.loombrain-sessions/capture.log`
 - The hook always exits 0 — it never blocks session exit
 - Failed chunks can be retried (idempotency tracks per-chunk, not per-session)
+
+## Catchup complement
+
+Sessions lost due to CTRL+C exits (where `SessionEnd` never fires) are recovered by the `SessionStart` catchup hook. See `hooks/session-start.md`.
