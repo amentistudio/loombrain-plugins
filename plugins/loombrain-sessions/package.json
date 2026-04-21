@@ -1,6 +1,6 @@
 {
   "name": "loombrain-sessions",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "loombrain-sessions",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory",
   "author": {
     "name": "Ladislav Martincik",
@@ -30,6 +30,32 @@
     }
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/check-auth-wrapper.sh",
+            "async": false,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/check-auth-wrapper.sh",
+            "async": false,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "matcher": "",
