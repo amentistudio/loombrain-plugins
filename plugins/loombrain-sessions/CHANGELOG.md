@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0] - 2026-04-21
+
+### Added
+- SessionStart hook that surfaces a visible warning when the user is not logged in — prevents the silent-failure window where sessions are lost because auth is missing or stale
+- UserPromptSubmit hook as belt-and-suspenders: re-warns once per session if auth is still missing (deduped via marker file in state dir)
+- `src/check-auth.ts` with pure `checkAuth()` function (env var priority, config file parse, 30-day refresh-token staleness detection) and `shouldWarnOnce()` session-scoped dedupe
+- `check-auth-wrapper.sh` sync wrapper (5s timeout) invoked by both hooks
+
+### Notes
+- Hooks are read-only and do not scan transcripts, do not re-upload anything, and do not reintroduce catchup/resurrection logic removed in 0.4.0
+- `stale` state only triggers when config has been expired > 30 days (refresh-token lifetime); access-token expiry is handled transparently by the existing refresh flow in `api-client.ts`
+
 ## [0.4.0] - 2026-04-12
 
 ### Removed
