@@ -1,0 +1,43 @@
+{
+  "name": "loombrain-projects",
+  "version": "0.1.0",
+  "description": "Guided workflows for LoomBrain projects, vision, goals, and tasks — kickoff, backfill, status briefing, weekly review, session retro",
+  "author": {
+    "name": "Ladislav Martincik",
+    "url": "https://github.com/iamladi"
+  },
+  "homepage": "https://github.com/amentistudio/loombrain-plugins",
+  "repository": "https://github.com/amentistudio/loombrain-plugins",
+  "license": "MIT",
+  "keywords": [
+    "loombrain",
+    "para",
+    "goals",
+    "tasks",
+    "vision",
+    "project-management",
+    "claude-code"
+  ],
+  "commands": {
+    "lb:project-status": {
+      "description": "Surface vision, goals, and active tasks for the current project as a visible briefing",
+      "source": "./commands/project-status.md"
+    },
+    "lb:project-backfill": {
+      "description": "Walk an existing PARA project through a gap-fill interview — vision, goals, tasks added only where missing",
+      "source": "./commands/project-backfill.md"
+    },
+    "lb:project-kickoff": {
+      "description": "Bootstrap a new PARA project with vision link, goals, and initial tasks in one guided flow",
+      "source": "./commands/project-kickoff.md"
+    },
+    "lb:weekly-review": {
+      "description": "Guided task triage — pending-review, overdue, stale, plus goal-without-tasks audit",
+      "source": "./commands/weekly-review.md"
+    },
+    "lb:session-retro": {
+      "description": "End-of-session distill — extract completed tasks, new tasks, goal progress from the work just done",
+      "source": "./commands/session-retro.md"
+    }
+  }
+}
