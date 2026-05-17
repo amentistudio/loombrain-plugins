@@ -17,7 +17,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
    - Call `mcp__loombrain__lb_review_tasks({pending_review: true, para_item_id?, limit: 50})`.
    - These are tasks completed 21-35 days ago with compound score < 1.0 — flagged by the nightly `experiment-check` cron because they didn't generate downstream activity.
    - For each, AskUserQuestion:
-     - **Archive** (work was a dead end) → `mcp__loombrain__lb_update_node` setting `archived_at` and `archived_reason="review_dead_end"` on the task's source node if applicable. Note: tasks themselves don't have an archive endpoint exposed — for now, leave the task completed and log the review decision in capture.
+     - **Archive** (work was a dead end) → the task record itself stays completed (no MCP endpoint archives tasks today). Two things happen on "Archive": (1) if the task has a `source_node_id`, call `mcp__loombrain__lb_update_node({id: source_node_id, metadata: {archived_at, archived_reason: "review_dead_end"}})` to retire the originating capture node so it stops surfacing in search; (2) record the "dead end" decision in the optional episode capture at step 5 so future reviews can see this task was already triaged. If the task has no `source_node_id`, only step (2) applies.
      - **Keep** (still matters, just slow burn) → no mutation, mark internally as reviewed.
      - **Convert to follow-up task** → `mcp__loombrain__lb_add_task({title: "Follow up on {original}", para_item_id, source_node_id: original_task_node, priority})`.
    - If no pending-review tasks, say so and move on.
