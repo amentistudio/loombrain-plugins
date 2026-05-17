@@ -20,7 +20,7 @@ Print a visible briefing of the vision, active goals, and top open tasks for the
 
 ## Usage
 
-```
+```text
 /lb:project-status
 ```
 
@@ -28,7 +28,7 @@ Print a visible briefing of the vision, active goals, and top open tasks for the
 
 Run steps 1-4 with parallel MCP calls where possible. Then render exactly this briefing shape, filling in real values and omitting sections that are empty:
 
-```
+```md
 # {project label}  ·  {category}
 
 ## Vision
