@@ -26,7 +26,7 @@ Onboard an **existing** PARA project that's missing some of the strategic frame:
 
 ## Usage
 
-```
+```text
 /lb:project-backfill
 ```
 
