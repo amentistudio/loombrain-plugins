@@ -27,7 +27,10 @@ Walk through the user's tasks with structured triage decisions: pending-review t
    - Tasks are pre-ordered: overdue first, then stale (no update >14 days), then fresh.
    - Triage one at a time (AskUserQuestion per task):
      - **Complete now** (with optional `actual_minutes` and notes) → `mcp__loombrain__lb_complete_task({id, actual_minutes?, notes?})`. Ask `cascade: true` if `child_count > 0`.
-     - **Reschedule** (push deadline) → `mcp__loombrain__lb_update_node` not directly applicable — tasks update via internal endpoint. For deadline edits, capture the intent in notes and create a successor task with new deadline; OR call MCP `lb_update_node` on the underlying task node if exposed. (Note: if `lb_update_task` does not exist as MCP, complete + recreate with new deadline.)
+     - **Reschedule** (push deadline) → decision tree based on what the MCP surface exposes:
+       1. **If `mcp__loombrain__lb_update_task` exists**: call it with the new `deadline`. (Today it does not — tasks have only `lb_add_task` and `lb_complete_task` exposed.)
+       2. **Else**: complete the current task via `mcp__loombrain__lb_complete_task({id, notes: "rescheduled to {new_deadline}: {reason}"})`, then `mcp__loombrain__lb_add_task({title: "{original title}", para_item_id, source_node_id: original_task.source_node_id, deadline: new_deadline, priority})`. This is the only viable path on today's MCP surface.
+       Do NOT call `mcp__loombrain__lb_update_node` on the task — tasks live in the `tasks` table, not `nodes`, so the node-update endpoint does not apply.
      - **Cancel** (no longer relevant) → `mcp__loombrain__lb_complete_task({id, notes: "cancelled: {reason}"})` — completion with a cancellation note is the cleanest path given the current MCP surface.
      - **Unblock** (note that the blocker resolved) → if the task has `blocked_by_count > 0`, ask which blocker is now done and complete that blocker first.
      - **Convert to subtask of another** → `mcp__loombrain__lb_add_task` with `parent_task_id` pointing to a new parent (max depth 3 — check `depth` before nesting).
