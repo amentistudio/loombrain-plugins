@@ -10,6 +10,11 @@
       "name": "loombrain-sessions",
       "source": "./plugins/loombrain-sessions",
       "description": "Auto-capture Claude Code sessions to LoomBrain episodic memory"
+    },
+    {
+      "name": "loombrain-projects",
+      "source": "./plugins/loombrain-projects",
+      "description": "Guided workflows for LoomBrain projects, vision, goals, and tasks"
     }
   ]
 }

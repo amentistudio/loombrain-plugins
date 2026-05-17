@@ -1,0 +1,7 @@
+{
+  "name": "loombrain-projects",
+  "version": "0.1.0",
+  "description": "Guided workflows for LoomBrain projects, vision, goals, and tasks",
+  "private": true,
+  "type": "module"
+}
