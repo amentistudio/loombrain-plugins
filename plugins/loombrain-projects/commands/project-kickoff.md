@@ -41,7 +41,7 @@ Wizard that creates a brand-new PARA project with full strategic frame in one si
 
 ## Usage
 
-```
+```text
 /lb:project-kickoff
 ```
 
