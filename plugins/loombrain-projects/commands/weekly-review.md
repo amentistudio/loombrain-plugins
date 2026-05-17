@@ -74,7 +74,7 @@ Open tasks pass — handling MCP gaps:
 
 Goal audit logic:
 
-- `lb_review_goals` returns `task_count` and `task_completed_count`. A goal with `task_count === 0` is the obvious case. A goal where `task_completed_count === task_count` AND no tasks were created in the last 30 days is also stale (compute the latter from the open-task pass results).
+- `lb_review_goals` returns `task_count` and `task_completed_count`. A goal is stale when either: (a) `task_count === 0` (no tasks ever attached), or (b) `task_completed_count === task_count` AND no open task in the step-3 results has `source_node_id` equal to the goal's node id (every task this goal motivated is done, no new ones in flight). Both conditions only use data already fetched — no extra MCP call. If you want a stricter "created in last N days" check, that requires a separate `lb_list_nodes` query with a date filter; treat it as out of scope for the basic audit.
 - Don't audit archived goals (the default `status: "active"` filter handles this).
 
 Episode capture (step 5):
