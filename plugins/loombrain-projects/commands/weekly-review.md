@@ -19,7 +19,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
    - For each, AskUserQuestion:
      - **Archive** (work was a dead end) → the task record itself stays completed (no MCP endpoint archives tasks today). Two things happen on "Archive": (1) if the task has a `source_node_id`, call `mcp__loombrain__lb_update_node({id: source_node_id, metadata: {archived_at, archived_reason: "review_dead_end"}})` to retire the originating capture node so it stops surfacing in search; (2) record the "dead end" decision in the optional episode capture at step 5 so future reviews can see this task was already triaged. If the task has no `source_node_id`, only step (2) applies.
      - **Keep** (still matters, just slow burn) → no mutation, mark internally as reviewed.
-     - **Convert to follow-up task** → `mcp__loombrain__lb_add_task({title: "Follow up on {original}", para_item_id, source_node_id: original_task_node, priority})`.
+     - **Convert to follow-up task** → `mcp__loombrain__lb_add_task({title: "Follow up on {original}", para_item_id, source_node_id: original_task.source_node_id, priority})`. Pass through the original task's `source_node_id` (the capture node that motivated the original task) so the follow-up preserves provenance. If the original task has no `source_node_id`, omit the field on the follow-up.
    - If no pending-review tasks, say so and move on.
 
 3. **Open tasks pass** (overdue → stale → fresh):
