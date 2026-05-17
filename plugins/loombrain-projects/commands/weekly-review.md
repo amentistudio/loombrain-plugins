@@ -51,7 +51,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
 
 ## Usage
 
-```
+```text
 /lb:weekly-review
 ```
 
