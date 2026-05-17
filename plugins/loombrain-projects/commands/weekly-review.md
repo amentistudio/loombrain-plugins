@@ -39,7 +39,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
 
 4. **Goal audit**:
    - Call `mcp__loombrain__lb_review_goals({status: "active", para_item_id?})`.
-   - For each goal where `task_count === 0` OR (`task_count > 0` AND `task_completed_count === task_count` AND no recent open tasks):
+   - For each goal where `task_count === 0` OR (`task_count > 0` AND `task_completed_count === task_count` AND no open task in the step-3 results has `source_node_id` equal to the goal's node id):
      - AskUserQuestion: "Goal '{title}' has no active tasks. Add a next task / mark complete / archive / leave alone?"
      - **Add task** → `mcp__loombrain__lb_add_task({title, para_item_id, source_node_id: goal_node_id})`.
      - **Mark complete** → `mcp__loombrain__lb_update_goal({id: goal_node_id, status: "completed"})`.
