@@ -19,12 +19,20 @@ const FETCH_TIMEOUT_MS = 6_000;
 const DEFAULT_LIMIT = 8;
 const NODE_LINE_CLIP = 140;
 
+/**
+ * Trailing domain TLDs to strip from a project folder name. Repos are commonly
+ * named after their domain ("loombrain.com", "iamladi.dev", "atlet.cz"); the
+ * suffix isn't part of the topic and dilutes the search, so we drop it to keep
+ * the topic aligned with the PARA slug.
+ */
+const DOMAIN_TLD = /\.(com|net|org|io|dev|app|ai|co|sh|me|xyz|cz|sk|de|uk|eu|us|so|gg|to|fm|tv)$/i;
+
 /** Derive a search topic from the working directory (its project folder name). */
 export function deriveTopic(cwd: string): string | null {
 	if (!cwd) return null;
 	const name = basename(cwd.replace(/\/+$/, ""));
 	if (!name || name === "/" || name === ".") return null;
-	return name;
+	return name.replace(DOMAIN_TLD, "") || name;
 }
 
 function clip(s: string, n: number): string {
