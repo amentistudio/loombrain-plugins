@@ -65,6 +65,22 @@ export interface CaptureApiResponse {
 	status: string;
 }
 
+/** A ranked node from POST /api/v1/context (subset of the API's NodeResponse). */
+export interface ContextNode {
+	id: string;
+	title: string;
+	summary?: string | null;
+	why?: string | null;
+	score?: number;
+	reasons?: string[];
+}
+
+/** Response shape of POST /api/v1/context (mirrors SessionContextResponse). */
+export interface ContextApiResponse {
+	nodes: ContextNode[];
+	matched_para_item: { id: string; label: string; category: string } | null;
+}
+
 /** CLI config file shape from ~/.config/loombrain/config.json */
 export interface CliConfig {
 	api_url: string;

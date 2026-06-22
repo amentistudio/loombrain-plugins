@@ -1,0 +1,94 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import type { AuthResult } from "../src/api-client";
+import { buildContextBlock, deriveTopic, fetchContext } from "../src/load-context";
+import type { ContextApiResponse } from "../src/types";
+
+describe("deriveTopic", () => {
+	test("returns the basename of a project path", () => {
+		expect(deriveTopic("/Users/x/Projects/loombrain.com")).toBe("loombrain.com");
+	});
+
+	test("ignores a trailing slash", () => {
+		expect(deriveTopic("/Users/x/Projects/myapp/")).toBe("myapp");
+	});
+
+	test("returns null for empty or root paths", () => {
+		expect(deriveTopic("")).toBeNull();
+		expect(deriveTopic("/")).toBeNull();
+	});
+});
+
+describe("buildContextBlock", () => {
+	const res: ContextApiResponse = {
+		nodes: [
+			{ id: "n1", title: "Kombucha brewing basics", why: "Reference for first ferment", score: 0.9, reasons: [] },
+			{ id: "n2", title: "SCOBY care", summary: "Keep it covered and warm.", score: 0.7, reasons: [] },
+		],
+		matched_para_item: { id: "p1", label: "Fermentation", category: "areas" },
+	};
+
+	test("renders a context block with topic, matched project, and node titles", () => {
+		const block = buildContextBlock(res, "loombrain.com");
+		expect(block).toContain("LoomBrain context");
+		expect(block).toContain("loombrain.com");
+		expect(block).toContain("Fermentation");
+		expect(block).toContain("Kombucha brewing basics");
+		expect(block).toContain("SCOBY care");
+	});
+
+	test("prefers why, falls back to summary for the node line", () => {
+		const block = buildContextBlock(res, "x");
+		expect(block).toContain("Reference for first ferment");
+		expect(block).toContain("Keep it covered and warm.");
+	});
+
+	test("returns empty string when there are no nodes", () => {
+		expect(buildContextBlock({ nodes: [], matched_para_item: null }, "x")).toBe("");
+	});
+});
+
+describe("fetchContext", () => {
+	const auth: AuthResult = { header: "ApiKey test", apiUrl: "https://example.com" };
+	const originalFetch = globalThis.fetch;
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	test("POSTs to /api/v1/context with auth + topic and returns the parsed body", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = (async (url: string, init?: RequestInit) => {
+			capturedUrl = url;
+			capturedInit = init;
+			return new Response(
+				JSON.stringify({ nodes: [{ id: "n1", title: "Hit" }], matched_para_item: null }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+
+		const result = await fetchContext(auth, "myproj", { limit: 5 });
+
+		expect(capturedUrl).toBe("https://example.com/api/v1/context");
+		expect(capturedInit?.method).toBe("POST");
+		const headers = capturedInit?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("ApiKey test");
+		const body = JSON.parse(String(capturedInit?.body));
+		expect(body.topic).toBe("myproj");
+		expect(body.limit).toBe(5);
+		expect(result?.nodes[0]?.title).toBe("Hit");
+	});
+
+	test("returns null on a non-ok response", async () => {
+		globalThis.fetch = (async () => new Response("nope", { status: 500 })) as any;
+		expect(await fetchContext(auth, "x")).toBeNull();
+	});
+
+	test("returns null when fetch throws", async () => {
+		globalThis.fetch = (async () => {
+			throw new Error("network down");
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+		expect(await fetchContext(auth, "x")).toBeNull();
+	});
+});
