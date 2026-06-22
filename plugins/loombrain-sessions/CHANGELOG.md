@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0] - 2026-06-22
+
+### Added
+- SessionStart hook that injects LoomBrain project context at the start of every session — derives a topic from the working directory, fetches the top-ranked knowledge nodes via `POST /api/v1/context`, and prints them (with the matched PARA project) so the brain shows up automatically instead of needing to be queried (#13)
+- Context block points the agent at `lb_recall(...)` for a synthesized answer and `lb_get_original(node_id)` for full source
+- `src/load-context.ts` (`deriveTopic`, `fetchContext`, `buildContextBlock`, `main`) and `load-context-wrapper.sh` hook entry; never blocks startup — every failure path (no auth, no project match, network error, timeout) exits silently (6s fetch budget, 10s hook timeout)
+
+### Fixed
+- `deriveTopic` strips a trailing domain TLD (`loombrain.com` → `loombrain`, `iamladi.dev` → `iamladi`) so domain-named project folders search for the project, not the literal folder name — the suffix diluted the topic match and injected scattered, unrelated nodes (#14)
+
 ## [0.5.0] - 2026-04-21
 
 ### Added
