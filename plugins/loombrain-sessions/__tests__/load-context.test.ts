@@ -5,11 +5,32 @@ import type { ContextApiResponse } from "../src/types";
 
 describe("deriveTopic", () => {
 	test("returns the basename of a project path", () => {
-		expect(deriveTopic("/Users/x/Projects/loombrain.com")).toBe("loombrain.com");
+		expect(deriveTopic("/Users/x/Projects/secondbrain")).toBe("secondbrain");
 	});
 
 	test("ignores a trailing slash", () => {
 		expect(deriveTopic("/Users/x/Projects/myapp/")).toBe("myapp");
+	});
+
+	test("strips a trailing domain TLD so the topic matches the PARA slug", () => {
+		// Domain-named project folders ("loombrain.com") should search for the
+		// project ("loombrain"), not the literal folder name — the ".com"
+		// dilutes the topic match and pulls in unrelated nodes.
+		expect(deriveTopic("/Users/x/Projects/loombrain.com")).toBe("loombrain");
+		expect(deriveTopic("/Users/x/Projects/iamladi.dev")).toBe("iamladi");
+		expect(deriveTopic("/Users/x/Projects/atlet.cz")).toBe("atlet");
+		expect(deriveTopic("/Users/x/Projects/myapp.io/")).toBe("myapp");
+	});
+
+	test("leaves non-domain names with dots untouched", () => {
+		// Only a final segment that looks like a TLD is stripped; a longer
+		// trailing segment is part of the name.
+		expect(deriveTopic("/Users/x/Projects/save.attachments")).toBe("save.attachments");
+		expect(deriveTopic("/Users/x/Projects/fitreport")).toBe("fitreport");
+	});
+
+	test("falls back to the full name when stripping would empty it", () => {
+		expect(deriveTopic("/Users/x/Projects/.com")).toBe(".com");
 	});
 
 	test("returns null for empty or root paths", () => {
