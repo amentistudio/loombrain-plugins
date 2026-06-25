@@ -94,7 +94,10 @@ export function buildQuestionsBlock(res: QuestionsApiResponse | null): string {
 	if (!res || res.questions.length === 0) return "";
 
 	const lines: string[] = ["## ❓ Open questions you're chasing", ""];
-	for (const q of res.questions) {
+	// Defensively bound the render to what we asked for — never trust the server
+	// to honor the limit (an old/buggy server returning a huge list shouldn't
+	// flood session-start context).
+	for (const q of res.questions.slice(0, DEFAULT_LIMIT)) {
 		const title = clip(q.title, NODE_LINE_CLIP);
 		const suffix = q.evidence_count != null && q.evidence_count > 0
 			? ` _(${q.evidence_count} bearing on it)_`
