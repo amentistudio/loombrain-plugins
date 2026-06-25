@@ -192,6 +192,17 @@ describe("buildQuestionsBlock", () => {
 		expect(block).toContain("- **No count field**");
 	});
 
+	test("caps the render to the requested limit, not DEFAULT_LIMIT", () => {
+		// Server over-returns; the render must not exceed what the caller asked for.
+		const res: QuestionsApiResponse = {
+			questions: Array.from({ length: 5 }, (_, i) => ({ id: `q${i}`, title: `Question ${i}` })),
+		};
+		const block = buildQuestionsBlock(res, 2);
+		expect(block).toContain("Question 0");
+		expect(block).toContain("Question 1");
+		expect(block).not.toContain("Question 2");
+	});
+
 	test("returns empty string for null", () => {
 		expect(buildQuestionsBlock(null)).toBe("");
 	});

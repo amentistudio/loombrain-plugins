@@ -90,14 +90,14 @@ export async function fetchOpenQuestions(
 }
 
 /** Format the questions response as a markdown block, or "" when there's nothing. */
-export function buildQuestionsBlock(res: QuestionsApiResponse | null): string {
+export function buildQuestionsBlock(res: QuestionsApiResponse | null, limit: number = DEFAULT_LIMIT): string {
 	if (!res || res.questions.length === 0) return "";
 
 	const lines: string[] = ["## ❓ Open questions you're chasing", ""];
 	// Defensively bound the render to what we asked for — never trust the server
 	// to honor the limit (an old/buggy server returning a huge list shouldn't
 	// flood session-start context).
-	for (const q of res.questions.slice(0, DEFAULT_LIMIT)) {
+	for (const q of res.questions.slice(0, limit)) {
 		const title = clip(q.title, NODE_LINE_CLIP);
 		const suffix = q.evidence_count != null && q.evidence_count > 0
 			? ` _(${q.evidence_count} bearing on it)_`
@@ -146,14 +146,18 @@ export async function main(): Promise<number> {
 
 	const topic = deriveTopic(input.cwd ?? process.cwd());
 
+	// One limit drives both the request and the render cap, so the defensive
+	// slice in buildQuestionsBlock can never exceed what we actually asked for.
+	const limit = DEFAULT_LIMIT;
+
 	// Fetch context (only when there is a topic) and questions (always) in parallel.
 	const [context, questions] = await Promise.all([
 		topic ? fetchContext(auth, topic) : Promise.resolve(null),
-		fetchOpenQuestions(auth),
+		fetchOpenQuestions(auth, { limit }),
 	]);
 
 	const contextBlock = topic && context ? buildContextBlock(context, topic) : "";
-	const questionsBlock = buildQuestionsBlock(questions);
+	const questionsBlock = buildQuestionsBlock(questions, limit);
 
 	const output = [contextBlock, questionsBlock].filter(Boolean).join("\n");
 	if (output) process.stdout.write(`${output}\n`);
