@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AuthResult } from "../src/api-client";
-import { buildContextBlock, deriveTopic, fetchContext } from "../src/load-context";
-import type { ContextApiResponse } from "../src/types";
+import { buildContextBlock, buildQuestionsBlock, deriveTopic, fetchContext, fetchOpenQuestions } from "../src/load-context";
+import type { ContextApiResponse, QuestionsApiResponse } from "../src/types";
 
 describe("deriveTopic", () => {
 	test("returns the basename of a project path", () => {
@@ -70,7 +70,10 @@ describe("buildContextBlock", () => {
 
 describe("fetchContext", () => {
 	const auth: AuthResult = { header: "ApiKey test", apiUrl: "https://example.com" };
-	const originalFetch = globalThis.fetch;
+	let originalFetch: typeof globalThis.fetch;
+	beforeEach(() => {
+		originalFetch = globalThis.fetch;
+	});
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
 	});
@@ -111,5 +114,89 @@ describe("fetchContext", () => {
 			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
 		}) as any;
 		expect(await fetchContext(auth, "x")).toBeNull();
+	});
+});
+
+describe("fetchOpenQuestions", () => {
+	const auth: AuthResult = { header: "ApiKey test", apiUrl: "https://example.com" };
+	let originalFetch: typeof globalThis.fetch;
+	beforeEach(() => {
+		originalFetch = globalThis.fetch;
+	});
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	test("GETs /api/v1/questions?status=open with the auth header and returns the parsed body", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = (async (url: string, init?: RequestInit) => {
+			capturedUrl = url;
+			capturedInit = init;
+			return new Response(
+				JSON.stringify({ questions: [{ id: "q1", title: "What is the optimal fermentation time?", evidence_count: 3 }] }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+
+		const result = await fetchOpenQuestions(auth, { limit: 5 });
+
+		expect(capturedUrl).toBe("https://example.com/api/v1/questions?status=open&limit=5");
+		expect(capturedInit?.method).toBeUndefined(); // GET — no method override needed
+		const headers = capturedInit?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("ApiKey test");
+		expect(result?.questions[0]?.title).toBe("What is the optimal fermentation time?");
+	});
+
+	test("returns null on a non-ok response", async () => {
+		globalThis.fetch = (async () => new Response("nope", { status: 500 })) as any;
+		expect(await fetchOpenQuestions(auth)).toBeNull();
+	});
+
+	test("returns null when fetch throws", async () => {
+		globalThis.fetch = (async () => {
+			throw new Error("network down");
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+		expect(await fetchOpenQuestions(auth)).toBeNull();
+	});
+});
+
+describe("buildQuestionsBlock", () => {
+	test("renders the header and each question title", () => {
+		const res: QuestionsApiResponse = {
+			questions: [
+				{ id: "q1", title: "What is the optimal fermentation time?", evidence_count: 3 },
+				{ id: "q2", title: "Which SCOBY vendor is best?", evidence_count: 0 },
+			],
+		};
+		const block = buildQuestionsBlock(res);
+		expect(block).toContain("Open questions");
+		expect(block).toContain("What is the optimal fermentation time?");
+		expect(block).toContain("Which SCOBY vendor is best?");
+	});
+
+	test("renders the evidence_count suffix only when evidence_count > 0", () => {
+		const res: QuestionsApiResponse = {
+			questions: [
+				{ id: "q1", title: "With evidence", evidence_count: 5 },
+				{ id: "q2", title: "Without evidence", evidence_count: 0 },
+				{ id: "q3", title: "No count field" },
+			],
+		};
+		const block = buildQuestionsBlock(res);
+		expect(block).toContain("5 bearing");
+		expect(block).not.toContain("0 bearing");
+		// the no-count question should appear without the suffix
+		expect(block).toContain("- **No count field**");
+	});
+
+	test("returns empty string for null", () => {
+		expect(buildQuestionsBlock(null)).toBe("");
+	});
+
+	test("returns empty string for an empty questions array", () => {
+		expect(buildQuestionsBlock({ questions: [] })).toBe("");
 	});
 });
