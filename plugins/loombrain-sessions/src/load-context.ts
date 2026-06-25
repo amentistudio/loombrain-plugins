@@ -13,7 +13,7 @@
  */
 import { basename } from "node:path";
 import { type AuthResult, resolveAuth } from "./api-client";
-import type { ContextApiResponse, SessionHookInput } from "./types";
+import type { ContextApiResponse, QuestionsApiResponse, SessionHookInput } from "./types";
 
 const FETCH_TIMEOUT_MS = 6_000;
 const DEFAULT_LIMIT = 8;
@@ -66,6 +66,48 @@ export async function fetchContext(
 	}
 }
 
+/**
+ * Fetch the user's open questions. Returns null on any failure — callers treat
+ * a null as "no questions to inject" and stay silent.
+ */
+export async function fetchOpenQuestions(
+	auth: AuthResult,
+	opts?: { limit?: number; timeoutMs?: number },
+): Promise<QuestionsApiResponse | null> {
+	try {
+		const limit = opts?.limit ?? DEFAULT_LIMIT;
+		const res = await fetch(`${auth.apiUrl}/api/v1/questions?status=open&limit=${limit}`, {
+			headers: {
+				Authorization: auth.header,
+			},
+			signal: AbortSignal.timeout(opts?.timeoutMs ?? FETCH_TIMEOUT_MS),
+		});
+		if (!res.ok) return null;
+		return (await res.json()) as QuestionsApiResponse;
+	} catch {
+		return null;
+	}
+}
+
+/** Format the questions response as a markdown block, or "" when there's nothing. */
+export function buildQuestionsBlock(res: QuestionsApiResponse | null, limit: number = DEFAULT_LIMIT): string {
+	if (!res || res.questions.length === 0) return "";
+
+	const lines: string[] = ["## ❓ Open questions you're chasing", ""];
+	// Defensively bound the render to what we asked for — never trust the server
+	// to honor the limit (an old/buggy server returning a huge list shouldn't
+	// flood session-start context).
+	for (const q of res.questions.slice(0, limit)) {
+		const title = clip(q.title, NODE_LINE_CLIP);
+		const suffix = q.evidence_count != null && q.evidence_count > 0
+			? ` _(${q.evidence_count} bearing on it)_`
+			: "";
+		lines.push(`- **${title}**${suffix}`);
+	}
+	lines.push("");
+	return lines.join("\n");
+}
+
 /** Format the context response as a markdown block, or "" when there's nothing. */
 export function buildContextBlock(res: ContextApiResponse, topic: string): string {
 	if (!res.nodes || res.nodes.length === 0) return "";
@@ -103,13 +145,22 @@ export async function main(): Promise<number> {
 	if (!auth) return 0; // unauthenticated — check-auth handles the warning
 
 	const topic = deriveTopic(input.cwd ?? process.cwd());
-	if (!topic) return 0;
 
-	const context = await fetchContext(auth, topic);
-	if (!context) return 0;
+	// One limit drives both the request and the render cap, so the defensive
+	// slice in buildQuestionsBlock can never exceed what we actually asked for.
+	const limit = DEFAULT_LIMIT;
 
-	const block = buildContextBlock(context, topic);
-	if (block) process.stdout.write(`${block}\n`);
+	// Fetch context (only when there is a topic) and questions (always) in parallel.
+	const [context, questions] = await Promise.all([
+		topic ? fetchContext(auth, topic) : Promise.resolve(null),
+		fetchOpenQuestions(auth, { limit }),
+	]);
+
+	const contextBlock = topic && context ? buildContextBlock(context, topic) : "";
+	const questionsBlock = buildQuestionsBlock(questions, limit);
+
+	const output = [contextBlock, questionsBlock].filter(Boolean).join("\n");
+	if (output) process.stdout.write(`${output}\n`);
 	return 0;
 }
 

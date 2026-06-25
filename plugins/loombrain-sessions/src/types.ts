@@ -88,3 +88,15 @@ export interface CliConfig {
 	refresh_token: string;
 	expires_at: number;
 }
+
+/** A single open question from GET /api/v1/questions */
+export interface QuestionItem {
+	id: string;
+	title: string;
+	evidence_count?: number;
+}
+
+/** Response shape of GET /api/v1/questions?status=open */
+export interface QuestionsApiResponse {
+	questions: QuestionItem[];
+}
