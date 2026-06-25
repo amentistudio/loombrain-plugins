@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0] - 2026-06-25
+
+### Added
+- SessionStart hook now also injects the **open question set** alongside project context — fetches the user's open questions via `GET /api/v1/questions?status=open&limit=8` and renders them as a markdown block (`## ❓ Open questions you're chasing`), one line per question with an `(N bearing on it)` suffix when captures are linked, so each session opens knowing what the user is actively trying to figure out
+- `fetchOpenQuestions` + `buildQuestionsBlock` in `src/load-context.ts`; context and questions are fetched in parallel, and the question render is capped to the requested limit so an over-returning server can't flood session-start context
+- `QuestionsApiResponse` + a minimal question item type in `src/types.ts`
+
+### Notes
+- Best-effort and non-blocking, same contract as the existing context fetch — every failure path (no auth, network error, timeout, no questions) stays silent and never blocks startup
+- Requires the `/api/v1/questions` route on the LoomBrain API (amentistudio/loombrain.com#554); end-to-end works once both ship
+
 ## [0.6.0] - 2026-06-22
 
 ### Added
