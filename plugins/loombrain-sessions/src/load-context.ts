@@ -72,6 +72,20 @@ export async function fetchContext(
 }
 
 /**
+ * Narrow an unknown parsed body to a well-formed QuestionsApiResponse. Same
+ * reasoning as isConstraintsApiResponse: a 200 OK with `{}`, `{ questions: null }`,
+ * or a non-object parses fine but would later throw in buildQuestionsBlock on
+ * `.length` if cast through unchecked.
+ */
+function isQuestionsApiResponse(body: unknown): body is QuestionsApiResponse {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		Array.isArray((body as { questions?: unknown }).questions)
+	);
+}
+
+/**
  * Fetch the user's open questions. Returns null on any failure — callers treat
  * a null as "no questions to inject" and stay silent.
  */
@@ -88,7 +102,12 @@ export async function fetchOpenQuestions(
 			signal: AbortSignal.timeout(opts?.timeoutMs ?? FETCH_TIMEOUT_MS),
 		});
 		if (!res.ok) return null;
-		return (await res.json()) as QuestionsApiResponse;
+		// A 200 alone isn't enough — validate the body's shape so a malformed success
+		// ({}, { questions: null }) becomes a clean null instead of casting through and
+		// throwing downstream. Keeps the hook best-effort and exiting cleanly.
+		const body = (await res.json()) as unknown;
+		if (!isQuestionsApiResponse(body)) return null;
+		return body;
 	} catch {
 		return null;
 	}
