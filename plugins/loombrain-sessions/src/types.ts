@@ -100,3 +100,15 @@ export interface QuestionItem {
 export interface QuestionsApiResponse {
 	questions: QuestionItem[];
 }
+
+/** A single constraint from GET /api/v1/constraints (subset of the API response). */
+export interface ConstraintItem {
+	id: string;
+	title: string;
+	scope?: "global" | "project";
+}
+
+/** Response shape of GET /api/v1/constraints?status=active */
+export interface ConstraintsApiResponse {
+	constraints: ConstraintItem[];
+}

@@ -13,7 +13,12 @@
  */
 import { basename } from "node:path";
 import { type AuthResult, resolveAuth } from "./api-client";
-import type { ContextApiResponse, QuestionsApiResponse, SessionHookInput } from "./types";
+import type {
+	ConstraintsApiResponse,
+	ContextApiResponse,
+	QuestionsApiResponse,
+	SessionHookInput,
+} from "./types";
 
 const FETCH_TIMEOUT_MS = 6_000;
 const DEFAULT_LIMIT = 8;
@@ -67,6 +72,20 @@ export async function fetchContext(
 }
 
 /**
+ * Narrow an unknown parsed body to a well-formed QuestionsApiResponse. Same
+ * reasoning as isConstraintsApiResponse: a 200 OK with `{}`, `{ questions: null }`,
+ * or a non-object parses fine but would later throw in buildQuestionsBlock on
+ * `.length` if cast through unchecked.
+ */
+function isQuestionsApiResponse(body: unknown): body is QuestionsApiResponse {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		Array.isArray((body as { questions?: unknown }).questions)
+	);
+}
+
+/**
  * Fetch the user's open questions. Returns null on any failure — callers treat
  * a null as "no questions to inject" and stay silent.
  */
@@ -83,10 +102,79 @@ export async function fetchOpenQuestions(
 			signal: AbortSignal.timeout(opts?.timeoutMs ?? FETCH_TIMEOUT_MS),
 		});
 		if (!res.ok) return null;
-		return (await res.json()) as QuestionsApiResponse;
+		// A 200 alone isn't enough — validate the body's shape so a malformed success
+		// ({}, { questions: null }) becomes a clean null instead of casting through and
+		// throwing downstream. Keeps the hook best-effort and exiting cleanly.
+		const body = (await res.json()) as unknown;
+		if (!isQuestionsApiResponse(body)) return null;
+		return body;
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Narrow an unknown parsed body to a well-formed ConstraintsApiResponse. A 200 OK
+ * is not proof of shape: an old/buggy server can return `{}`, `{ constraints: null }`,
+ * or a non-object and `res.json()` parses it happily. Without this guard the value
+ * casts straight through and later throws in buildConstraintsBlock on `.length`.
+ */
+function isConstraintsApiResponse(body: unknown): body is ConstraintsApiResponse {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		Array.isArray((body as { constraints?: unknown }).constraints)
+	);
+}
+
+/**
+ * Fetch the user's GLOBAL active constraints — the life/business-wide guardrails.
+ * Returns null on any failure — callers treat null as "nothing to inject" and stay
+ * silent. Project-scoped constraints are injected separately by lb_get_context when
+ * an agent works that project; the session-start bridge carries the global set only.
+ */
+export async function fetchConstraints(
+	auth: AuthResult,
+	opts?: { limit?: number; timeoutMs?: number },
+): Promise<ConstraintsApiResponse | null> {
+	try {
+		const limit = opts?.limit ?? DEFAULT_LIMIT;
+		const res = await fetch(
+			`${auth.apiUrl}/api/v1/constraints?status=active&scope=global&limit=${limit}`,
+			{
+				headers: {
+					Authorization: auth.header,
+				},
+				signal: AbortSignal.timeout(opts?.timeoutMs ?? FETCH_TIMEOUT_MS),
+			},
+		);
+		if (!res.ok) return null;
+		// A 200 alone isn't enough — validate the body's shape so a malformed success
+		// ({}, { constraints: null }) becomes a clean null instead of casting through
+		// and throwing downstream. Keeps the hook best-effort and exiting cleanly.
+		const body = (await res.json()) as unknown;
+		if (!isConstraintsApiResponse(body)) return null;
+		return body;
+	} catch {
+		return null;
+	}
+}
+
+/** Format the constraints response as a markdown block, or "" when there's nothing. */
+export function buildConstraintsBlock(
+	res: ConstraintsApiResponse | null,
+	limit: number = DEFAULT_LIMIT,
+): string {
+	if (!res || res.constraints.length === 0) return "";
+
+	const lines: string[] = ["## 🚧 Constraints you work under", ""];
+	// Defensively bound the render to what we asked for — never trust the server to
+	// honor the limit.
+	for (const c of res.constraints.slice(0, limit)) {
+		lines.push(`- ${clip(c.title, NODE_LINE_CLIP)}`);
+	}
+	lines.push("");
+	return lines.join("\n");
 }
 
 /** Format the questions response as a markdown block, or "" when there's nothing. */
@@ -150,16 +238,20 @@ export async function main(): Promise<number> {
 	// slice in buildQuestionsBlock can never exceed what we actually asked for.
 	const limit = DEFAULT_LIMIT;
 
-	// Fetch context (only when there is a topic) and questions (always) in parallel.
-	const [context, questions] = await Promise.all([
+	// Fetch context (only when there is a topic), questions, and global constraints
+	// (both always — the open set + the guardrails are global/life-wide) in parallel.
+	const [context, questions, constraints] = await Promise.all([
 		topic ? fetchContext(auth, topic) : Promise.resolve(null),
 		fetchOpenQuestions(auth, { limit }),
+		fetchConstraints(auth, { limit }),
 	]);
 
 	const contextBlock = topic && context ? buildContextBlock(context, topic) : "";
 	const questionsBlock = buildQuestionsBlock(questions, limit);
+	const constraintsBlock = buildConstraintsBlock(constraints, limit);
 
-	const output = [contextBlock, questionsBlock].filter(Boolean).join("\n");
+	// Constraints first — they frame how to work everything that follows.
+	const output = [constraintsBlock, contextBlock, questionsBlock].filter(Boolean).join("\n");
 	if (output) process.stdout.write(`${output}\n`);
 	return 0;
 }

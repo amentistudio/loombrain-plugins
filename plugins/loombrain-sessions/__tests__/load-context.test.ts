@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AuthResult } from "../src/api-client";
-import { buildContextBlock, buildQuestionsBlock, deriveTopic, fetchContext, fetchOpenQuestions } from "../src/load-context";
-import type { ContextApiResponse, QuestionsApiResponse } from "../src/types";
+import {
+	buildConstraintsBlock,
+	buildContextBlock,
+	buildQuestionsBlock,
+	deriveTopic,
+	fetchConstraints,
+	fetchContext,
+	fetchOpenQuestions,
+} from "../src/load-context";
+import type { ConstraintsApiResponse, ContextApiResponse, QuestionsApiResponse } from "../src/types";
 
 describe("deriveTopic", () => {
 	test("returns the basename of a project path", () => {
@@ -161,6 +169,27 @@ describe("fetchOpenQuestions", () => {
 		}) as any;
 		expect(await fetchOpenQuestions(auth)).toBeNull();
 	});
+
+	test("returns null on a malformed 200 success body, and the render stays clean", async () => {
+		// A 200 OK isn't proof of shape. A body that isn't a well-formed
+		// QuestionsApiResponse ({}, { questions: null }, a bare string, an array) must
+		// become a clean null — otherwise it casts through and buildQuestionsBlock
+		// throws on `.length`, breaking the best-effort session-start contract.
+		for (const bad of ["{}", '{"questions":null}', '"nope"', "[]"]) {
+			globalThis.fetch = (async () =>
+				new Response(bad, {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				})
+				// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+			) as any;
+
+			const result = await fetchOpenQuestions(auth);
+			expect(result).toBeNull();
+			// Downstream render must stay empty rather than throw — hook exits cleanly.
+			expect(buildQuestionsBlock(result)).toBe("");
+		}
+	});
 });
 
 describe("buildQuestionsBlock", () => {
@@ -209,5 +238,109 @@ describe("buildQuestionsBlock", () => {
 
 	test("returns empty string for an empty questions array", () => {
 		expect(buildQuestionsBlock({ questions: [] })).toBe("");
+	});
+});
+
+describe("fetchConstraints", () => {
+	const auth: AuthResult = { header: "ApiKey test", apiUrl: "https://example.com" };
+	let originalFetch: typeof globalThis.fetch;
+	beforeEach(() => {
+		originalFetch = globalThis.fetch;
+	});
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	test("GETs /api/v1/constraints?status=active&scope=global with the auth header and returns the parsed body", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+		globalThis.fetch = (async (url: string, init?: RequestInit) => {
+			capturedUrl = url;
+			capturedInit = init;
+			return new Response(
+				JSON.stringify({ constraints: [{ id: "c1", title: "Only web apps, TS + Bun", scope: "global" }] }),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+
+		const result = await fetchConstraints(auth, { limit: 5 });
+
+		expect(capturedUrl).toBe(
+			"https://example.com/api/v1/constraints?status=active&scope=global&limit=5",
+		);
+		expect(capturedInit?.method).toBeUndefined(); // GET — no method override needed
+		const headers = capturedInit?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("ApiKey test");
+		expect(result?.constraints[0]?.title).toBe("Only web apps, TS + Bun");
+	});
+
+	test("returns null on a non-ok response", async () => {
+		// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		globalThis.fetch = (async () => new Response("nope", { status: 500 })) as any;
+		expect(await fetchConstraints(auth)).toBeNull();
+	});
+
+	test("returns null when fetch throws", async () => {
+		globalThis.fetch = (async () => {
+			throw new Error("network down");
+			// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+		}) as any;
+		expect(await fetchConstraints(auth)).toBeNull();
+	});
+
+	test("returns null on a malformed 200 success body, and the render stays clean", async () => {
+		// A 200 OK is not proof of shape. A body that isn't a well-formed
+		// ConstraintsApiResponse ({}, { constraints: null }, a bare string, an array)
+		// must become a clean null — otherwise it casts straight through and
+		// buildConstraintsBlock throws on `.length`, breaking the best-effort
+		// session-start contract.
+		for (const bad of ["{}", '{"constraints":null}', '"nope"', "[]"]) {
+			globalThis.fetch = (async () =>
+				new Response(bad, {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				})
+				// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+			) as any;
+
+			const result = await fetchConstraints(auth);
+			expect(result).toBeNull();
+			// Downstream render must stay empty rather than throw — hook exits cleanly.
+			expect(buildConstraintsBlock(result)).toBe("");
+		}
+	});
+});
+
+describe("buildConstraintsBlock", () => {
+	test("renders the header and each constraint title", () => {
+		const res: ConstraintsApiResponse = {
+			constraints: [
+				{ id: "c1", title: "Only web apps/extensions, TypeScript, Bun", scope: "global" },
+				{ id: "c2", title: "Copy proven markets, compete on retention", scope: "global" },
+			],
+		};
+		const block = buildConstraintsBlock(res);
+		expect(block).toContain("Constraints you work under");
+		expect(block).toContain("Only web apps/extensions, TypeScript, Bun");
+		expect(block).toContain("Copy proven markets, compete on retention");
+	});
+
+	test("caps the render to the requested limit, not DEFAULT_LIMIT", () => {
+		const res: ConstraintsApiResponse = {
+			constraints: Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, title: `Rule ${i}` })),
+		};
+		const block = buildConstraintsBlock(res, 2);
+		expect(block).toContain("Rule 0");
+		expect(block).toContain("Rule 1");
+		expect(block).not.toContain("Rule 2");
+	});
+
+	test("returns empty string for null", () => {
+		expect(buildConstraintsBlock(null)).toBe("");
+	});
+
+	test("returns empty string for an empty constraints array", () => {
+		expect(buildConstraintsBlock({ constraints: [] })).toBe("");
 	});
 });
