@@ -267,6 +267,28 @@ describe("fetchConstraints", () => {
 		}) as any;
 		expect(await fetchConstraints(auth)).toBeNull();
 	});
+
+	test("returns null on a malformed 200 success body, and the render stays clean", async () => {
+		// A 200 OK is not proof of shape. A body that isn't a well-formed
+		// ConstraintsApiResponse ({}, { constraints: null }, a bare string, an array)
+		// must become a clean null — otherwise it casts straight through and
+		// buildConstraintsBlock throws on `.length`, breaking the best-effort
+		// session-start contract.
+		for (const bad of ["{}", '{"constraints":null}', '"nope"', "[]"]) {
+			globalThis.fetch = (async () =>
+				new Response(bad, {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				})
+				// biome-ignore lint/suspicious/noExplicitAny: test fetch stub
+			) as any;
+
+			const result = await fetchConstraints(auth);
+			expect(result).toBeNull();
+			// Downstream render must stay empty rather than throw — hook exits cleanly.
+			expect(buildConstraintsBlock(result)).toBe("");
+		}
+	});
 });
 
 describe("buildConstraintsBlock", () => {

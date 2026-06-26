@@ -95,6 +95,20 @@ export async function fetchOpenQuestions(
 }
 
 /**
+ * Narrow an unknown parsed body to a well-formed ConstraintsApiResponse. A 200 OK
+ * is not proof of shape: an old/buggy server can return `{}`, `{ constraints: null }`,
+ * or a non-object and `res.json()` parses it happily. Without this guard the value
+ * casts straight through and later throws in buildConstraintsBlock on `.length`.
+ */
+function isConstraintsApiResponse(body: unknown): body is ConstraintsApiResponse {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		Array.isArray((body as { constraints?: unknown }).constraints)
+	);
+}
+
+/**
  * Fetch the user's GLOBAL active constraints — the life/business-wide guardrails.
  * Returns null on any failure — callers treat null as "nothing to inject" and stay
  * silent. Project-scoped constraints are injected separately by lb_get_context when
@@ -116,7 +130,12 @@ export async function fetchConstraints(
 			},
 		);
 		if (!res.ok) return null;
-		return (await res.json()) as ConstraintsApiResponse;
+		// A 200 alone isn't enough — validate the body's shape so a malformed success
+		// ({}, { constraints: null }) becomes a clean null instead of casting through
+		// and throwing downstream. Keeps the hook best-effort and exiting cleanly.
+		const body = (await res.json()) as unknown;
+		if (!isConstraintsApiResponse(body)) return null;
+		return body;
 	} catch {
 		return null;
 	}
