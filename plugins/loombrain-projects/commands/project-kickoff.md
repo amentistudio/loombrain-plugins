@@ -9,7 +9,7 @@ Wizard that creates a brand-new PARA project with full strategic frame in one si
 ## Workflow
 
 1. **Detect existing PARA** via `mcp__loombrain__lb_detect_project({working_directory})` with the current working directory. It returns the best-matching PARA item as `{id, label, category}`, or `null`.
-   - **Match** → ask (AskUserQuestion): "Project '{label}' already exists. Extend it (skip to step 3 using its `para_item_id`) or create a separate new project?"
+   - **Match** → ask (AskUserQuestion): "Project '{label}' already exists. Extend it (skip to step 3) or create a separate new project?" On "extend", use the detected `id` as `para_item_id` for all subsequent calls.
    - **No match** → propose a new project. Derive a default label from the working directory's last component (strip `.com`/`.io`/`-` separators), let user accept or override.
 
 2. **Create PARA project** (only on "create new" path):

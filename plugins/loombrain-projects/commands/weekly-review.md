@@ -9,7 +9,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
 ## Workflow
 
 1. **Project scope** (AskUserQuestion):
-   - "Review this project only" (auto-detected via `mcp__loombrain__lb_detect_project({working_directory})`) — recommended default.
+   - "Review this project only" (auto-detected via `mcp__loombrain__lb_detect_project({working_directory})`; use the returned `id` as `para_item_id`) — recommended default.
    - "Review across all projects" (no `para_item_id` filter).
    - "Pick a different project" → list active PARA projects, user picks.
 
