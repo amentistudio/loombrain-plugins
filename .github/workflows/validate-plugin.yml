@@ -17,6 +17,7 @@ jobs:
       - run: bun install
       - run: bun run validate:marketplace
       - run: bun test:marketplace
+      - run: bun run test:guards
 
   validate-plugin:
     runs-on: ubuntu-latest

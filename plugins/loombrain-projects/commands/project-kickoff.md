@@ -8,10 +8,9 @@ Wizard that creates a brand-new PARA project with full strategic frame in one si
 
 ## Workflow
 
-1. **Detect existing PARA** via `mcp__loombrain__lb_get_context` with the current working directory.
-   - **Single match** → ask (AskUserQuestion): "Project '{label}' already exists. Extend it (skip to step 3 using its `para_item_id`) or create a separate new project?"
+1. **Detect existing PARA** via `mcp__loombrain__lb_detect_project({working_directory})` with the current working directory. It returns the best-matching PARA item as `{id, label, category}`, or `null`.
+   - **Match** → ask (AskUserQuestion): "Project '{label}' already exists. Extend it (skip to step 3 using its `para_item_id`) or create a separate new project?"
    - **No match** → propose a new project. Derive a default label from the working directory's last component (strip `.com`/`.io`/`-` separators), let user accept or override.
-   - **Ambiguous match** → AskUserQuestion to disambiguate, then handle as single match.
 
 2. **Create PARA project** (only on "create new" path):
    - Ask for label (pre-fill from cwd), short description, and purpose (one paragraph — why does this project exist?).
@@ -19,7 +18,7 @@ Wizard that creates a brand-new PARA project with full strategic frame in one si
    - Capture the returned `id` as `para_item_id` for all subsequent calls.
 
 3. **Resolve vision link**:
-   - List existing visions: `mcp__loombrain__lb_list_nodes({tags: ["vision"], limit: 10})`.
+   - List existing visions: `mcp__loombrain__lb_review_visions({limit: 10})` → `{visions, total, next_cursor?}`.
    - **If visions exist**: AskUserQuestion "Link this project's goals to which vision?" (options = vision titles + "create new vision" + "skip").
    - **If none exist**: ask "No vision yet — create one now (recommended for first-ever project) or skip?"
    - If create: interview title + body (4-6 sentences) + horizon_years (default 5). Call `mcp__loombrain__lb_set_vision({title, body_markdown, horizon_years})`.

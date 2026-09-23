@@ -8,13 +8,13 @@ Print a visible briefing of the vision, active goals, and top open tasks for the
 
 ## Workflow
 
-1. **Detect project**: call `mcp__loombrain__lb_get_context` with the current working directory.
+1. **Detect project**: call `mcp__loombrain__lb_detect_project({working_directory})` with the current working directory. It returns the best-matching PARA item as `{id, label, category}`, or `null`. Use the returned `id` as `para_item_id`.
 2. **Handle no match**: if no PARA item matches, list active projects via `mcp__loombrain__lb_list_para_items({category: "projects", status: "active"})` and ask the user to pick one (AskUserQuestion). If they decline, exit gracefully — no briefing to show.
 3. **Parallel fetch** for the resolved `para_item_id`:
    - `mcp__loombrain__lb_review_goals({para_item_id, status: "active"})`
    - `mcp__loombrain__lb_review_tasks({para_item_id, status: "open", limit: 10})`
    - `mcp__loombrain__lb_review_tasks({para_item_id, pending_review: true, limit: 10})`
-4. **Vision lookup**: if any goal has a non-empty `linked_visions` array, pull the first vision via `mcp__loombrain__lb_get_node({id: vision_id})`. If no goals have linked visions, fall back to `mcp__loombrain__lb_list_nodes({tags: ["vision"], limit: 1})` so the user still sees their tenant-level vision.
+4. **Vision lookup**: if any goal has a non-empty `linked_visions` array, pull the first vision via `mcp__loombrain__lb_get_node({id: vision_id})`. If no goals have linked visions, fall back to `mcp__loombrain__lb_review_visions({limit: 1})` so the user still sees their tenant-level vision.
 5. **Render briefing** (visible to user — print the markdown directly in your response, do not paraphrase or compress).
 6. **End with one-line nudge**: `Run /lb:weekly-review to triage tasks, /lb:project-backfill if anything looks missing.`
 
@@ -60,6 +60,5 @@ Rendering rules:
 
 Edge cases:
 
-- If `lb_get_context` returns ambiguous matches (multiple PARA items), use AskUserQuestion to disambiguate before any data fetch.
 - If MCP calls fail, report the error inline (don't silently render a partial briefing).
 - Do NOT call any mutation tools — no `lb_set_*`, `lb_add_task`, `lb_update_*`, `lb_complete_*`. This command is strictly read-only.
