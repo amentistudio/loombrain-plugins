@@ -8,7 +8,7 @@ Interview the user at the end of a work session to capture what just happened: w
 
 ## Workflow
 
-1. **Detect project** via `mcp__loombrain__lb_get_context` with the current working directory. If no match, ask the user to pick a PARA project (the retro needs a project scope to attach tasks and read goals).
+1. **Detect project** via `mcp__loombrain__lb_detect_project({working_directory})` with the current working directory. It returns the best-matching PARA item as `{id, label, category}`, or `null`; use its `id` as `para_item_id`. If it returns `null`, ask the user to pick a PARA project (the retro needs a project scope to attach tasks and read goals).
 
 2. **Pull current state** (parallel calls for the resolved `para_item_id`):
    - `mcp__loombrain__lb_review_goals({para_item_id, status: "active"})` — for the goal-progress interview.

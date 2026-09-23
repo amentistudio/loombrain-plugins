@@ -9,7 +9,7 @@ Walk through the user's tasks with structured triage decisions: pending-review t
 ## Workflow
 
 1. **Project scope** (AskUserQuestion):
-   - "Review this project only" (auto-detected via `mcp__loombrain__lb_get_context`) — recommended default.
+   - "Review this project only" (auto-detected via `mcp__loombrain__lb_detect_project({working_directory})`; use the returned `id` as `para_item_id`) — recommended default.
    - "Review across all projects" (no `para_item_id` filter).
    - "Pick a different project" → list active PARA projects, user picks.
 
@@ -77,7 +77,7 @@ Open tasks pass — handling MCP gaps:
 
 Goal audit logic:
 
-- `lb_review_goals` returns `task_count` and `task_completed_count`. A goal is stale when either: (a) `task_count === 0` (no tasks ever attached), or (b) `task_completed_count === task_count` AND no open task in the step-3 results has `source_node_id` equal to the goal's node id (every task this goal motivated is done, no new ones in flight). Both conditions only use data already fetched — no extra MCP call. If you want a stricter "created in last N days" check, that requires a separate `lb_list_nodes` query with a date filter; treat it as out of scope for the basic audit.
+- `lb_review_goals` returns `task_count` and `task_completed_count`. A goal is stale when either: (a) `task_count === 0` (no tasks ever attached), or (b) `task_completed_count === task_count` AND no open task in the step-3 results has `source_node_id` equal to the goal's node id (every task this goal motivated is done, no new ones in flight). Both conditions only use data already fetched — no extra MCP call. If you want a stricter "created in last N days" check, that requires a separate date-filtered node query; treat it as out of scope for the basic audit.
 - Don't audit archived goals (the default `status: "active"` filter handles this).
 
 Episode capture (step 5):

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0] - 2026-09-23
+
+### Changed
+- Project detection calls `lb_detect_project` instead of `lb_get_context` in `/lb:project-kickoff`, `/lb:project-status`, `/lb:session-retro`, and `/lb:weekly-review`. The commands get a PARA item id without requesting a full session context.
+- Vision lists call `lb_review_visions` instead of `lb_list_nodes({tags: ["vision"]})` in `/lb:project-kickoff`, `/lb:project-status`, and `/lb:project-backfill`.
+- The "ambiguous match" branches are gone: `lb_detect_project` returns one best match or `null`.
+
+### Notes
+- Requires the LoomBrain MCP server with `lb_detect_project` and `lb_review_visions` (loombrain.com #627, #630). `lb_get_context` and `lb_list_nodes` stop being advertised to human connections in loombrain.com #625.
+- A repo test (`__tests__/retired-tools.test.ts`) fails if a command names either retired tool again.
+
 ## [0.1.0] - 2026-05-17
 
 ### Added

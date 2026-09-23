@@ -32,11 +32,10 @@ Wraps the existing LoomBrain MCP surface (`lb_set_goal`, `lb_review_tasks`, `lb_
 
 ## Project auto-detection
 
-Every command first calls `lb_get_context` with your current working directory. LoomBrain fuzzy-matches the path's last component (after stripping domains like `.com` / `.io`) against PARA item labels and slugs.
+Commands with automatic project detection (all except `/lb:project-backfill`, which picks from a list) first call `lb_detect_project` with your current working directory. LoomBrain fuzzy-matches the path's last component (after stripping domains like `.com` / `.io`) against PARA item labels and slugs.
 
-- **Single match** → uses that PARA project automatically
+- **Match** → uses the best-matching PARA project automatically
 - **No match** → asks you to pick a project (or, for `/lb:project-kickoff`, proposes creating a new one)
-- **Ambiguous** → asks you to disambiguate
 
 ## Methodology
 
